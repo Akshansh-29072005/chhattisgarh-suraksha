@@ -1,0 +1,291 @@
+import { useState, useEffect, useCallback } from 'react';
+import { environmentalAPI } from '../utils/environmental';
+
+const REFRESH_INTERVAL = 5 * 60 * 1000; // 5 minutes
+const MAX_RETRIES = 3;
+const INITIAL_RETRY_DELAY = 1000;
+
+export const useEnvironmentalData = () => {
+  const [metrics, setMetrics] = useState(null);
+  const [alerts, setAlerts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [retryCount, setRetryCount] = useState(0);
+  const [trends, setTrends] = useState([]);
+
+  // Fetch current metrics with retries
+  const fetchMetrics = async (retryCount = 0) => {
+    try {
+      const response = await environmentalAPI.getCurrentMetrics();
+      
+      // Check if response exists and has data
+      if (!response || !response.data) {
+        throw new Error('Invalid response format');
+      }
+
+      // Handle error in response
+      if (response.data.error) {
+        throw new Error(response.data.message || 'Failed to fetch metrics');
+      }
+
+      // Validate data exists and is not null/undefined
+      if (!response.data.data) {
+        throw new Error('No metrics data available');
+      }
+
+      setMetrics(response.data.data);
+      setError(null);
+    } catch (err) {
+      console.error('Failed to fetch metrics:', err);
+
+      // Handle authentication errors
+      if (err.response?.status === 401 || err.response?.status === 403) {
+        localStorage.removeItem('auth_token');
+        window.location.href = '/login';
+        return;
+      }
+
+      // Retry logic for network errors
+      if (retryCount < 2 && (!err.response || err.response.status >= 500)) {
+        console.log(`Retrying metrics fetch... Attempt ${retryCount + 1}`);
+        setTimeout(() => fetchMetrics(retryCount + 1), 1000 * (retryCount + 1));
+        return;
+      }
+
+      const errorMessage = err.response?.data?.message || err.message || 'Failed to fetch environmental data';
+      setError(errorMessage);
+      setMetrics(null); // Reset metrics on error
+    }
+  };
+
+  // Fetch active alerts with retries
+  const fetchAlerts = async (retryCount = 0) => {
+    try {
+      const response = await environmentalAPI.getActiveAlerts();
+      
+      // Check if response exists and has data
+      if (!response || !response.data) {
+        throw new Error('Invalid response format');
+      }
+
+      // Handle error in response
+      if (response.data.error) {
+        throw new Error(response.data.message || 'Failed to fetch alerts');
+      }
+
+      // Validate data exists
+      const alertsData = response.data.data ?? [];
+      setAlerts(alertsData);
+      
+    } catch (err) {
+      console.error('Failed to fetch alerts:', err);
+
+      // Handle authentication errors
+      if (err.response?.status === 401 || err.response?.status === 403) {
+        localStorage.removeItem('auth_token');
+        window.location.href = '/login';
+        return;
+      }
+
+      // Retry logic for network errors
+      if (retryCount < 2 && (!err.response || err.response.status >= 500)) {
+        console.log(`Retrying alerts fetch... Attempt ${retryCount + 1}`);
+        setTimeout(() => fetchAlerts(retryCount + 1), 1000 * (retryCount + 1));
+        return;
+      }
+
+      // Set empty alerts on error but don't show error message
+      setAlerts([]);
+    }
+  };
+
+  // Fetch data with exponential backoff
+  const fetchDataWithRetry = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      console.log('[useEnvironmentalData] Starting data fetch...');
+      
+      // Fetch metrics and alerts separately to handle individual failures
+      let metricsResponse, alertsResponse;
+      
+      try {
+        metricsResponse = await environmentalAPI.getCurrentMetrics();
+      } catch (metricsError) {
+        console.error('Failed to fetch metrics:', metricsError);
+        // Provide fallback metrics data
+        metricsResponse = {
+          data: {
+            success: true,
+            data: {
+              aqi: null,
+              pm25: null,
+              pm10: null,
+              temperature: null,
+              humidity: null,
+              last_updated: new Date().toISOString()
+            }
+          }
+        };
+      }
+
+      try {
+        alertsResponse = await environmentalAPI.getActiveAlerts();
+      } catch (alertsError) {
+        console.error('Failed to fetch alerts:', alertsError);
+        // Provide empty alerts array as fallback
+        alertsResponse = { data: { success: true, data: [] } };
+      }
+
+      // Validate metrics response
+      if (metricsResponse?.data?.success) {
+        setMetrics(metricsResponse.data.data);
+      } else {
+        throw new Error('Invalid metrics response');
+      }
+
+      // Validate alerts response
+      if (alertsResponse?.data?.success) {
+        setAlerts(alertsResponse.data.data || []);
+      } else {
+        console.warn('No alerts data available');
+        setAlerts([]);
+      }
+
+      // Reset retry count on success
+      setRetryCount(0);
+      setError(null);
+
+      // Fetch trends/history from 8AM -> now (best-effort)
+      try {
+        const now = new Date();
+        let start = new Date();
+        start.setHours(8, 0, 0, 0);
+        // if current time is before 8AM, show previous day's 8AM -> now
+        if (now < start) {
+          start = new Date(start.getTime() - 24 * 60 * 60 * 1000);
+        }
+        const durationHours = Math.ceil((now.getTime() - start.getTime()) / (1000 * 60 * 60)) || 1;
+
+        const [airHistResp, weatherHistResp] = await Promise.all([
+          environmentalAPI.getMetricsHistory('air_quality', durationHours),
+          environmentalAPI.getMetricsHistory('weather', durationHours)
+        ]);
+
+        const airHistory = airHistResp?.data?.data ?? airHistResp?.data ?? [];
+        const weatherHistory = weatherHistResp?.data?.data ?? weatherHistResp?.data ?? [];
+
+        // Merge histories by timestamp where possible. Best-effort joining on exact timestamp.
+        const weatherByTs = new Map();
+        weatherHistory.forEach((w) => {
+          if (w.timestamp) weatherByTs.set(new Date(w.timestamp).toISOString(), w);
+        });
+
+        const merged = (airHistory || []).map((a) => {
+          const ts = a.timestamp ? new Date(a.timestamp).toISOString() : null;
+          const w = ts ? weatherByTs.get(ts) : undefined;
+          return {
+            timestamp: a.timestamp || (w && w.timestamp) || null,
+            aqi: a.aqi ?? a.air_quality ?? null,
+            pm25: a.pm25 ?? null,
+            pm10: a.pm10 ?? null,
+            temperature: w?.temperature ?? null,
+            humidity: w?.humidity ?? null
+          };
+        });
+
+        // If no merged data but we have current metrics, create a fallback single-point series
+        if (merged.length === 0 && metricsResponse?.data?.data) {
+          const m = metricsResponse.data.data;
+          merged.push({
+            timestamp: m.last_updated || new Date().toISOString(),
+            aqi: m.aqi ?? m.air_quality ?? null,
+            pm25: m.pm25 ?? null,
+            pm10: m.pm10 ?? null,
+            temperature: m.temperature ?? null,
+            humidity: m.humidity ?? null
+          });
+        }
+
+        setTrends(merged);
+      } catch (histErr) {
+        console.warn('Failed to fetch trends/history:', histErr);
+        // keep trends as-is (do not fail entire fetch)
+      }
+    } catch (err) {
+      console.error('Error fetching environmental data:', err);
+
+      // Handle auth errors
+      if (err.response?.status === 401 || err.response?.status === 403) {
+        localStorage.removeItem('auth_token');
+        window.location.href = '/login';
+        return;
+      }
+
+      // For network or server errors, retry
+      if (retryCount < MAX_RETRIES && (err.code === 'ECONNABORTED' || err.response?.status >= 500)) {
+        const nextRetryDelay = INITIAL_RETRY_DELAY * Math.pow(2, retryCount);
+        console.log(`Retrying in ${nextRetryDelay}ms... (Attempt ${retryCount + 1}/${MAX_RETRIES})`);
+        
+        setRetryCount(prev => prev + 1);
+        setTimeout(() => fetchDataWithRetry(), nextRetryDelay);
+      } else {
+        // For critical errors, mark them as such
+        setError({
+          message: 'Unable to load environmental data. Please try again later.',
+          critical: true,
+          originalError: err
+        });
+        // Provide fallback data
+        setMetrics({
+          aqi: null,
+          pm25: null,
+          pm10: null,
+          temperature: null,
+          humidity: null,
+          last_updated: new Date().toISOString()
+        });
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [retryCount]);
+
+  // Initial fetch and periodic refresh
+  useEffect(() => {
+    console.log('[useEnvironmentalData] Starting initial fetch...');
+    
+    const fetchInitialData = async () => {
+      try {
+        await fetchDataWithRetry();
+        console.log('[useEnvironmentalData] Initial fetch successful');
+      } catch (error) {
+        console.error('[useEnvironmentalData] Initial fetch failed:', error);
+      }
+    };
+
+    fetchInitialData();
+
+    const interval = setInterval(() => {
+      console.log('[useEnvironmentalData] Running periodic refresh...');
+      fetchDataWithRetry();
+    }, REFRESH_INTERVAL);
+
+    return () => {
+      console.log('[useEnvironmentalData] Cleaning up...');
+      clearInterval(interval);
+    };
+  }, [fetchDataWithRetry]);
+
+  return {
+    metrics,
+    alerts,
+    trends,
+    loading,
+    error,
+    refetch: fetchDataWithRetry
+  };
+};
+
+export default useEnvironmentalData;

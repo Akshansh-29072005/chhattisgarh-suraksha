@@ -1,0 +1,214 @@
+import jwt from 'jsonwebtoken';
+import twilio from 'twilio';
+import { query } from '../config/database.js';
+
+const twilioClient = twilio(
+  process.env.TWILIO_ACCOUNT_SID,
+  process.env.TWILIO_AUTH_TOKEN
+);
+
+// Generate a random 6-digit OTP
+const generateOTP = () => {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+};
+
+// Send OTP
+export const sendOtp = async (req, res, next) => {
+  try {
+    const { phoneNumber } = req.body;
+
+    if (!phoneNumber) {
+      return res.status(400).json({ message: 'Phone number is required' });
+    }
+
+    // Generate OTP
+    const otp = generateOTP();
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // OTP expires in 10 minutes
+
+    // Save OTP in database
+    await query(
+      'INSERT INTO otps (phone_number, otp_code, expires_at) VALUES ($1, $2, $3)',
+      [phoneNumber, otp, expiresAt]
+    );
+
+    // In development, just log the OTP instead of sending it
+    console.log('\n==================================');
+    console.log(`🔐 OTP for ${phoneNumber}: ${otp}`);
+    console.log('==================================\n');
+
+    // In production, uncomment this to send actual SMS
+    /*
+    await twilioClient.messages.create({
+      body: `Your Chhattisgarh Suraksha verification code is: ${otp}`,
+      from: process.env.TWILIO_PHONE_NUMBER,
+      to: phoneNumber
+    });
+    */
+
+    res.status(200).json({ message: 'OTP sent successfully' });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Verify OTP
+export const verifyOtp = async (req, res, next) => {
+  try {
+    const { phoneNumber, otp } = req.body;
+
+    if (!phoneNumber || !otp) {
+      return res.status(400).json({ message: 'Phone number and OTP are required' });
+    }
+
+    // Check if OTP exists and is valid
+    const otpResult = await query(
+      'SELECT * FROM otps WHERE phone_number = $1 AND otp_code = $2 AND expires_at > NOW() AND NOT is_verified ORDER BY created_at DESC LIMIT 1',
+      [phoneNumber, otp]
+    );
+
+    if (otpResult.rows.length === 0) {
+      return res.status(400).json({ message: 'Invalid or expired OTP' });
+    }
+
+    // Mark OTP as verified
+    await query(
+      'UPDATE otps SET is_verified = true WHERE id = $1',
+      [otpResult.rows[0].id]
+    );
+
+    // Check if user exists and get their profile status
+    const userResult = await query(
+      'SELECT id, full_name, email, address FROM users WHERE phone_number = $1',
+      [phoneNumber]
+    );
+
+    const token = jwt.sign(
+      { phoneNumber, userId: userResult.rows[0]?.id },
+      process.env.JWT_SECRET,
+      { expiresIn: '24h' }
+    );
+
+    // Check if user exists and has completed their profile
+    const isProfileComplete = userResult.rows.length > 0 && 
+      userResult.rows[0].full_name && 
+      userResult.rows[0].email && 
+      userResult.rows[0].address;
+
+    const response = {
+      message: 'OTP verified successfully',
+      token,
+      isNewUser: userResult.rows.length === 0,
+      isProfileComplete: isProfileComplete,
+      userId: userResult.rows[0]?.id,
+      user: userResult.rows[0] || null
+    };
+    console.log('\n==================================');
+    console.log('✅ OTP Verification Success:');
+    console.log(response);
+    console.log('==================================\n');
+    res.status(200).json(response);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Register new user
+export const registerUser = async (req, res, next) => {
+  try {
+    console.log('\n==================================');
+    console.log('📝 Registration Request:', req.body);
+    console.log('==================================\n');
+
+    const { phoneNumber, fullName, email, address } = req.body;
+
+    if (!phoneNumber || !fullName) {
+      console.log('❌ Validation Error: Missing required fields');
+      return res.status(400).json({ 
+        message: 'Phone number and full name are required',
+        details: {
+          phoneNumber: !phoneNumber ? 'Phone number is required' : null,
+          fullName: !fullName ? 'Full name is required' : null
+        }
+      });
+    }
+
+    // Check if user already exists
+    const existingUser = await query(
+      'SELECT id, full_name FROM users WHERE phone_number = $1',
+      [phoneNumber]
+    );
+
+    if (existingUser.rows.length > 0) {
+      console.log('⚠️ User already exists:', existingUser.rows[0]);
+      return res.status(200).json({ 
+        message: 'User already registered',
+        userId: existingUser.rows[0].id,
+        token: jwt.sign(
+          { phoneNumber, userId: existingUser.rows[0].id },
+          process.env.JWT_SECRET,
+          { expiresIn: '24h' }
+        )
+      });
+    }
+
+    // Create new user
+    const result = await query(
+      'INSERT INTO users (phone_number, full_name, email, address) VALUES ($1, $2, $3, $4) RETURNING id',
+      [phoneNumber, fullName, email || null, address || null]
+    );
+
+    // Generate JWT token
+    const token = jwt.sign(
+      { phoneNumber, userId: result.rows[0].id },
+      process.env.JWT_SECRET,
+      { expiresIn: '24h' }
+    );
+
+    const response = {
+      message: 'User registered successfully',
+      userId: result.rows[0].id,
+      token,
+      isProfileComplete: true,
+      shouldRedirect: true,
+      redirectTo: '/environmental-dashboard'
+    };
+    
+    console.log('\n==================================');
+    console.log('✅ User Registration Success:');
+    console.log('User:', { phoneNumber, fullName, email });
+    console.log('Response:', response);
+    console.log('==================================\n');
+    
+    res.status(201).json(response);
+  } catch (error) {
+    console.log('\n==================================');
+    console.log('❌ Registration Error:', error);
+    console.log('==================================\n');
+
+    // Handle database unique constraint violations
+    if (error.code === '23505') {
+      if (error.constraint === 'users_phone_number_key') {
+        return res.status(409).json({ 
+          message: 'Phone number already registered',
+          field: 'phoneNumber'
+        });
+      }
+      if (error.constraint === 'users_email_key') {
+        return res.status(409).json({ 
+          message: 'Email already registered',
+          field: 'email'
+        });
+      }
+    }
+
+    // Handle database connection errors
+    if (error.code === 'ECONNREFUSED') {
+      return res.status(503).json({ 
+        message: 'Database connection error',
+        details: 'Unable to connect to the database'
+      });
+    }
+
+    next(error);
+  }
+};
