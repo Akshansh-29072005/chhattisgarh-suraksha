@@ -2,10 +2,24 @@ import jwt from 'jsonwebtoken';
 import twilio from 'twilio';
 import { query } from '../config/database.js';
 
-const twilioClient = twilio(
-  process.env.TWILIO_ACCOUNT_SID,
-  process.env.TWILIO_AUTH_TOKEN
-);
+// Initialize Twilio client only if credentials are provided
+const twilioEnabled = process.env.TWILIO_ENABLED === 'true';
+const hasCredentials = process.env.TWILIO_ACCOUNT_SID &&
+                       process.env.TWILIO_AUTH_TOKEN &&
+                       process.env.TWILIO_PHONE_NUMBER;
+
+let twilioClient = null;
+if (twilioEnabled && hasCredentials) {
+  try {
+    twilioClient = twilio(
+      process.env.TWILIO_ACCOUNT_SID,
+      process.env.TWILIO_AUTH_TOKEN
+    );
+  } catch (error) {
+    console.error('⚠️  Twilio initialization failed:', error.message);
+    console.log('📱 Falling back to console OTP logging');
+  }
+}
 
 // Generate a random 6-digit OTP
 const generateOTP = () => {
@@ -31,19 +45,28 @@ export const sendOtp = async (req, res, next) => {
       [phoneNumber, otp, expiresAt]
     );
 
-    // In development, just log the OTP instead of sending it
-    console.log('\n==================================');
-    console.log(`🔐 OTP for ${phoneNumber}: ${otp}`);
-    console.log('==================================\n');
-
-    // In production, uncomment this to send actual SMS
-    /*
-    await twilioClient.messages.create({
-      body: `Your Chhattisgarh Suraksha verification code is: ${otp}`,
-      from: process.env.TWILIO_PHONE_NUMBER,
-      to: phoneNumber
-    });
-    */
+    // Send OTP via SMS if Twilio is enabled and configured
+    if (twilioEnabled && twilioClient) {
+      try {
+        await twilioClient.messages.create({
+          body: `Your Chhattisgarh Suraksha verification code is: ${otp}. Valid for 10 minutes.`,
+          from: process.env.TWILIO_PHONE_NUMBER,
+          to: phoneNumber
+        });
+        console.log(`✅ SMS sent successfully to ${phoneNumber}`);
+      } catch (error) {
+        console.error('❌ Twilio SMS error:', error.message);
+        console.log('📱 Fallback: Logging OTP to console');
+        console.log('\n==================================');
+        console.log(`🔐 OTP for ${phoneNumber}: ${otp}`);
+        console.log('==================================\n');
+      }
+    } else {
+      // Development mode - log OTP to console
+      console.log('\n==================================');
+      console.log(`🔐 [DEV MODE] OTP for ${phoneNumber}: ${otp}`);
+      console.log('==================================\n');
+    }
 
     res.status(200).json({ message: 'OTP sent successfully' });
   } catch (error) {
