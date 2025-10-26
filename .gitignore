@@ -1,2 +1,14 @@
 node_modules
 .env
+.env.local
+.env.production
+backend/blockchain/.contract-address.json
+backend/logs/
+dist
+build
+coverage
+.DS_Store
+*.log
+npm-debug.log*
+.vscode
+.idea
