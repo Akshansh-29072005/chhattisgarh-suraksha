@@ -244,32 +244,108 @@ const PORT = process.env.PORT || 5000;
 
 import http from 'http';
 
-dbConnect().then(async () => {
-  console.log('✅ Database connected');
-  
-  const server = http.createServer(app);
-  
-  // Start server first
-  server.listen(PORT, '0.0.0.0', async () => {
-    const address = server.address();
-    console.log(`🚀 Server is running on ${typeof address === 'string' ? address : `${address.address}:${address.port}`}`);
-    
-    // Then try to initialize blockchain
-    try {
-      console.log('Initializing blockchain...');
-      const contractAddress = await blockchain.initBlockchain();
-      console.log('✅ Blockchain contract deployed at:', contractAddress);
-    } catch (err) {
-      console.error('⚠️ Blockchain initialization failed:', err.message);
-      console.log('👉 Make sure Hardhat node is running with: npx hardhat node');
-      // Don't exit - let the server run without blockchain for development
-    }
-  });
+// Initialize server
+let server;
 
-  server.on('error', (error) => {
-    console.error('Server error:', error);
-  });
-}).catch(err => {
-  console.error('Failed to connect to database:', err);
-  process.exit(1);
+const startServer = async () => {
+  try {
+    // 1. Connect to database
+    await dbConnect();
+    logger.info('✅ Database connected');
+
+    // 2. Initialize Redis (non-blocking - continues without Redis if unavailable)
+    try {
+      await initRedis();
+      logger.info('✅ Redis connected');
+    } catch (error) {
+      logger.warn('⚠️  Redis initialization failed - continuing without caching');
+    }
+
+    // 3. Create HTTP server
+    server = http.createServer(app);
+
+    // 4. Start server
+    server.listen(PORT, '0.0.0.0', async () => {
+      const address = server.address();
+      logger.info(`🚀 Server is running on ${typeof address === 'string' ? address : `${address.address}:${address.port}`}`);
+
+      // 5. Initialize blockchain (non-blocking)
+      try {
+        logger.info('Initializing blockchain...');
+        const contractAddress = await blockchain.initBlockchain();
+        logger.info(`✅ Blockchain contract deployed at: ${contractAddress}`);
+      } catch (err) {
+        logger.warn('⚠️  Blockchain initialization failed:', err.message);
+        logger.info('👉 Make sure Hardhat node is running with: npx hardhat node');
+        // Don't exit - let the server run without blockchain for development
+      }
+
+      logger.info('✅ All services initialized - ready to accept requests');
+    });
+
+    server.on('error', (error) => {
+      logger.error('Server error:', error);
+      process.exit(1);
+    });
+  } catch (err) {
+    logger.error('Failed to start server:', err);
+    process.exit(1);
+  }
+};
+
+// Graceful shutdown handling
+const gracefulShutdown = async (signal) => {
+  logger.info(`\n${signal} received. Starting graceful shutdown...`);
+
+  // Stop accepting new connections
+  if (server) {
+    server.close(async () => {
+      logger.info('✅ HTTP server closed');
+
+      // Close database connections
+      try {
+        // Pool will be closed automatically on process exit
+        logger.info('✅ Database connections closed');
+      } catch (error) {
+        logger.error('Error closing database:', error);
+      }
+
+      // Close Redis connections
+      try {
+        await closeRedis();
+        logger.info('✅ Redis connection closed');
+      } catch (error) {
+        logger.error('Error closing Redis:', error);
+      }
+
+      logger.info('✅ Graceful shutdown complete');
+      process.exit(0);
+    });
+
+    // Force shutdown after 10 seconds
+    setTimeout(() => {
+      logger.error('❌ Forced shutdown due to timeout');
+      process.exit(1);
+    }, 10000);
+  } else {
+    process.exit(0);
+  }
+};
+
+// Listen for termination signals
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
+// Handle uncaught exceptions
+process.on('uncaughtException', (error) => {
+  logger.error('Uncaught Exception:', error);
+  gracefulShutdown('uncaughtException');
 });
+
+process.on('unhandledRejection', (reason, promise) => {
+  logger.error('Unhandled Rejection at:', promise, 'reason:', reason);
+  gracefulShutdown('unhandledRejection');
+});
+
+// Start the server
+startServer();
