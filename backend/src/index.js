@@ -1,10 +1,14 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import helmet from 'helmet';
 import { errorHandler } from './middleware/error.middleware.js';
 import { dbConnect } from './config/database.js';
+import { initRedis, closeRedis, isRedisConnected } from './config/redis.js';
 import reportsRoutes from './routes/reports.routes.js';
 import * as blockchain from './services/blockchain.service.js';
+import logger, { logRequest } from './utils/logger.js';
+import { generalRateLimiter, otpSendRateLimiter, otpVerifyRateLimiter, reportSubmitRateLimiter } from './middleware/rate-limiter.js';
 
 // Import routes
 import authRoutes from './routes/auth.routes.js';
@@ -14,6 +18,27 @@ import metricsRoutes from './routes/metrics.routes.js';
 
 // Load environment variables
 dotenv.config();
+
+// Validate critical environment variables on startup
+const requiredEnvVars = ['DB_PASSWORD', 'JWT_SECRET'];
+const missingVars = requiredEnvVars.filter(v => !process.env[v]);
+
+if (missingVars.length > 0) {
+  console.error('❌ Missing required environment variables:', missingVars.join(', '));
+  console.error('   Please check your .env file. See .env.example for required variables.');
+  process.exit(1);
+}
+
+// Warn about optional but recommended environment variables
+const optionalVars = ['WAQI_API_KEY', 'TWILIO_ACCOUNT_SID', 'REDIS_HOST'];
+optionalVars.forEach(v => {
+  if (!process.env[v]) {
+    console.warn(`⚠️  Optional env var ${v} not set - some features may be limited`);
+  }
+});
+
+logger.info('🚀 Starting Chhattisgarh Suraksha API Server...');
+logger.info(`📦 Environment: ${process.env.NODE_ENV || 'development'}`);
 
 // Create Express app
 const app = express();
@@ -56,23 +81,27 @@ app.use((req, res, next) => {
   next();
 });
 
-// Middleware
+// CORS configuration from environment variables
 const corsOptions = {
   origin: function (origin, callback) {
-    const allowedOrigins = [
-      'http://localhost:3000',  // Create React App default
-      'http://localhost:5173',  // Vite default
-      'http://127.0.0.1:5173', // Vite alternative
-      'http://localhost:4173', // Vite preview
-      'http://localhost:4028'   
-    ];
-    
+    // Get allowed origins from environment variable (comma-separated)
+    const allowedOrigins = process.env.CORS_ORIGINS
+      ? process.env.CORS_ORIGINS.split(',').map(o => o.trim())
+      : [
+          'http://localhost:3000',
+          'http://localhost:5173',
+          'http://127.0.0.1:5173',
+          'http://localhost:4173',
+          'http://localhost:4028'
+        ];
+
     // Allow requests with no origin (like mobile apps or curl requests)
     if (!origin) return callback(null, true);
-    
+
     if (allowedOrigins.indexOf(origin) !== -1 || process.env.NODE_ENV === 'development') {
       callback(null, true);
     } else {
+      logger.warn(`CORS blocked request from origin: ${origin}`);
       callback(new Error('Not allowed by CORS'));
     }
   },
