@@ -2,11 +2,15 @@ import pkg from 'pg';
 const { Pool } = pkg;
 
 const pool = new Pool({
-  user: 'postgres',
-  host: 'localhost',
-  database: 'chhattisgarh_suraksha',
-  password: 'aawa_lewa',
-  port: 5432
+  user: process.env.DB_USER || 'postgres',
+  host: process.env.DB_HOST || 'localhost',
+  database: process.env.DB_NAME || 'chhattisgarh_suraksha',
+  password: process.env.DB_PASSWORD,
+  port: parseInt(process.env.DB_PORT) || 5432,
+  max: 20,  // Maximum connections in pool
+  min: 5,   // Minimum connections in pool
+  idle: 10000,  // Idle timeout in milliseconds
+  connectionTimeoutMillis: 5000
 });
 
 export const dbConnect = async () => {
@@ -57,9 +61,6 @@ export const dbConnect = async () => {
         timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
 
-      -- Drop existing table if exists
-      DROP TABLE IF EXISTS weather_metrics CASCADE;
-      
       CREATE TABLE IF NOT EXISTS weather_metrics (
         id SERIAL PRIMARY KEY,
         location_id INTEGER REFERENCES locations(id),
@@ -85,9 +86,6 @@ export const dbConnect = async () => {
         timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
 
-      -- Drop existing table if exists
-      DROP TABLE IF EXISTS real_time_metrics CASCADE;
-      
       CREATE TABLE IF NOT EXISTS real_time_metrics (
         id SERIAL PRIMARY KEY,
         location_id INTEGER REFERENCES locations(id),
