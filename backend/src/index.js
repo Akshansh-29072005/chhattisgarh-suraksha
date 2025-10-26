@@ -15,6 +15,9 @@ import authRoutes from './routes/auth.routes.js';
 import statusRoutes from './routes/status.routes.js';
 import userRoutes from './routes/users.routes.js';
 import metricsRoutes from './routes/metrics.routes.js';
+import forumRoutes from './routes/forum.routes.js';
+import analyticsRoutes from './routes/analytics.routes.js';
+import mapRoutes from './routes/map.routes.js';
 
 // Load environment variables
 dotenv.config();
@@ -212,6 +215,9 @@ app.use('/api/status', statusRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/metrics', metricsRoutes);
 app.use('/api/reports', reportSubmitRateLimiter, reportsRoutes);
+app.use('/api/forum', forumRoutes);
+app.use('/api/analytics', analyticsRoutes);
+app.use('/api/map', mapRoutes);
 
 // Catch-all route for debugging
 app.use((req, res) => {
