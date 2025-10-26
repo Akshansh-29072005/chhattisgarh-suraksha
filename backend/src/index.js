@@ -139,7 +139,56 @@ app.use(express.json({
 }));
 app.use(express.urlencoded({ extended: true }));
 
-// Routes
+// Health check endpoint (for Docker healthcheck and load balancers)
+app.get('/health', async (req, res) => {
+  const health = {
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    services: {
+      database: 'unknown',
+      redis: 'unknown',
+      blockchain: 'unknown'
+    }
+  };
+
+  try {
+    // Check database connection
+    const { query } = await import('./config/database.js');
+    await query('SELECT 1');
+    health.services.database = 'connected';
+  } catch (error) {
+    health.services.database = 'disconnected';
+    health.status = 'degraded';
+  }
+
+  // Check Redis connection
+  health.services.redis = isRedisConnected() ? 'connected' : 'disconnected';
+
+  // Check blockchain (basic check - contract exists)
+  health.services.blockchain = blockchain.contract ? 'connected' : 'disconnected';
+
+  const statusCode = health.status === 'ok' ? 200 : 503;
+  res.status(statusCode).json(health);
+});
+
+// Detailed status endpoint
+app.get('/api/status', (req, res) => {
+  res.json({
+    name: 'Chhattisgarh Suraksha API',
+    version: '1.0.0',
+    environment: process.env.NODE_ENV || 'development',
+    uptime: process.uptime(),
+    timestamp: new Date().toISOString(),
+    services: {
+      database: 'connected',
+      redis: isRedisConnected() ? 'connected' : 'disconnected',
+      blockchain: blockchain.contract ? 'active' : 'inactive'
+    }
+  });
+});
+
+// Root endpoint
 app.get('/', (req, res) => {
   res.json({
     name: 'Chhattisgarh Suraksha API',
@@ -154,12 +203,15 @@ app.get('/', (req, res) => {
   });
 });
 
+// Apply general rate limiter to all API routes
+app.use('/api/', generalRateLimiter);
 
+// Apply specific rate limiters to auth routes (will be handled in auth routes file)
 app.use('/api/auth', authRoutes);
 app.use('/api/status', statusRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/metrics', metricsRoutes);
-app.use('/api/reports', reportsRoutes);
+app.use('/api/reports', reportSubmitRateLimiter, reportsRoutes);
 
 // Catch-all route for debugging
 app.use((req, res) => {
