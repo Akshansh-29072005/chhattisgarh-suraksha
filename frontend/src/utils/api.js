@@ -271,6 +271,31 @@ export const userAPI = {
   // Update user profile
   updateProfile: async (userData) => {
     return api.put('/api/users/profile', userData);
+  },
+
+  // Get user preferences
+  getPreferences: async () => {
+    return api.get('/api/users/preferences');
+  },
+
+  // Update user preferences
+  updatePreferences: async (preferences) => {
+    return api.put('/api/users/preferences', preferences);
+  },
+
+  // Get notification settings
+  getNotificationSettings: async () => {
+    return api.get('/api/users/notification-settings');
+  },
+
+  // Update notification settings
+  updateNotificationSettings: async (settings) => {
+    return api.put('/api/users/notification-settings', settings);
+  },
+
+  // Get user impact statistics
+  getImpactStats: async () => {
+    return api.get('/api/users/impact-stats');
   }
 };
 
@@ -330,6 +355,78 @@ export const metricsAPI = {
   // Force update metrics (admin only)
   forceUpdate: async () => {
     return api.post('/api/metrics/update');
+  }
+};
+
+// Forum related API calls
+export const forumAPI = {
+  // Get all forum topics
+  getTopics: async (params = {}) => {
+    const query = new URLSearchParams(params).toString();
+    return api.get(`/api/forum/topics${query ? `?${query}` : ''}`);
+  },
+
+  // Get single topic with posts
+  getTopic: async (topicId) => {
+    return api.get(`/api/forum/topics/${topicId}`);
+  },
+
+  // Create new topic
+  createTopic: async (topicData) => {
+    return api.post('/api/forum/topics', topicData);
+  },
+
+  // Create reply to topic
+  createPost: async (topicId, content) => {
+    return api.post(`/api/forum/topics/${topicId}/posts`, { content });
+  },
+
+  // Vote on topic or post
+  vote: async (targetType, targetId, voteType) => {
+    return api.post('/api/forum/vote', { targetType, targetId, voteType });
+  },
+
+  // Delete topic
+  deleteTopic: async (topicId) => {
+    return api.delete(`/api/forum/topics/${topicId}`);
+  }
+};
+
+// Analytics related API calls
+export const analyticsAPI = {
+  // Get metrics summary
+  getMetricsSummary: async (params = {}) => {
+    const query = new URLSearchParams(params).toString();
+    return api.get(`/api/analytics/metrics-summary${query ? `?${query}` : ''}`);
+  },
+
+  // Get trends for specific metric
+  getTrends: async (metric, period) => {
+    return api.get(`/api/analytics/trends?metric=${metric}&period=${period}`);
+  },
+
+  // Get insights and patterns
+  getInsights: async () => {
+    return api.get('/api/analytics/insights');
+  }
+};
+
+// Map related API calls
+export const mapAPI = {
+  // Get citizen reports for map
+  getReports: async (params = {}) => {
+    const query = new URLSearchParams(params).toString();
+    return api.get(`/api/map/reports${query ? `?${query}` : ''}`);
+  },
+
+  // Get sensor locations with latest metrics
+  getSensors: async () => {
+    return api.get('/api/map/sensors');
+  },
+
+  // Search for locations
+  searchLocations: async (searchQuery) => {
+    return api.post('/api/map/search', { query: searchQuery });
   }
 };
 
