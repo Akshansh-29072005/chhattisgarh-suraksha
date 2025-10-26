@@ -43,8 +43,13 @@ logger.info(`📦 Environment: ${process.env.NODE_ENV || 'development'}`);
 // Create Express app
 const app = express();
 
-// Enhanced debugging middleware with colors and symbols
-app.use((req, res, next) => {
+// Security headers with Helmet
+app.use(helmet());
+
+// Request logging middleware (only verbose logging in development)
+if (process.env.NODE_ENV === 'development') {
+  // Enhanced debugging middleware with colors and symbols
+  app.use((req, res, next) => {
   const start = Date.now();
   console.log('\n🚀 Incoming Request');
   console.log('──────────────────────────────────');
@@ -77,9 +82,14 @@ app.use((req, res, next) => {
     console.log('──────────────────────────────────\n');
     oldSend.apply(res, arguments);
   };
-  
-  next();
-});
+
+
+    next();
+  });
+} else {
+  // Production: use winston logger for structured logging
+  app.use(logRequest);
+}
 
 // CORS configuration from environment variables
 const corsOptions = {
