@@ -125,11 +125,13 @@ app.get('/', (req, res) => {
 
 app.use('/api/auth', authRoutes);
 app.use('/api/status', statusRoutes);
-app.use('/api/users', userRoutes);
+app.use('/api/users', userActivityRoutes); // User activity routes (stats, activity, leaderboard)
+app.use('/api/users', userRoutes); // User profile routes
 app.use('/api/metrics', metricsRoutes);
 app.use('/api/reports', reportsRoutes);
 app.use('/api/ml', mlRoutes);
 app.use('/api/forum', forumRoutes);
+app.use('/api/analytics', analyticsRoutes);
 
 // Catch-all route for debugging
 app.use((req, res) => {
