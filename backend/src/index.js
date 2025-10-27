@@ -169,7 +169,15 @@ import http from 'http';
 
 dbConnect().then(async () => {
   console.log('✅ Database connected');
-  
+
+  // Initialize database tables
+  try {
+    await ForumService.initialize();
+    await UserActivityService.createTables();
+  } catch (err) {
+    console.error('⚠️ Table initialization warning:', err.message);
+  }
+
   const server = http.createServer(app);
   
   // Start server first
