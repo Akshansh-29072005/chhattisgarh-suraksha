@@ -205,12 +205,50 @@ function UserProfile() {
     setUserData(prev => ({ ...prev, ...updatedSettings }));
   };
 
-  const handleUpdatePreferences = (updatedPreferences) => {
-    setEnvironmentalPreferences(updatedPreferences);
+  const handleUpdatePreferences = async (updatedPreferences) => {
+    try {
+      // Optimistically update UI
+      setEnvironmentalPreferences(updatedPreferences);
+
+      // Send to backend
+      await userAPI.updatePreferences(updatedPreferences);
+    } catch (error) {
+      console.error('Failed to update environmental preferences:', error);
+      alert('Failed to save preferences. Please try again.');
+
+      // Revert on error - refetch from backend
+      try {
+        const response = await userAPI.getPreferences();
+        if (response.data) {
+          setEnvironmentalPreferences(response.data);
+        }
+      } catch (refetchError) {
+        console.error('Failed to refetch preferences:', refetchError);
+      }
+    }
   };
 
-  const handleUpdateNotifications = (updatedNotifications) => {
-    setNotificationSettings(updatedNotifications);
+  const handleUpdateNotifications = async (updatedNotifications) => {
+    try {
+      // Optimistically update UI
+      setNotificationSettings(updatedNotifications);
+
+      // Send to backend
+      await userAPI.updateNotificationSettings(updatedNotifications);
+    } catch (error) {
+      console.error('Failed to update notification settings:', error);
+      alert('Failed to save notification settings. Please try again.');
+
+      // Revert on error - refetch from backend
+      try {
+        const response = await userAPI.getNotificationSettings();
+        if (response.data) {
+          setNotificationSettings(response.data);
+        }
+      } catch (refetchError) {
+        console.error('Failed to refetch notification settings:', refetchError);
+      }
+    }
   };
 
   const renderTabContent = () => {
