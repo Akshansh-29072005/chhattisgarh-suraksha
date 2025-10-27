@@ -122,6 +122,7 @@ app.use('/api/status', statusRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/metrics', metricsRoutes);
 app.use('/api/reports', reportsRoutes);
+app.use('/api/ml', mlRoutes);
 
 // Catch-all route for debugging
 app.use((req, res) => {
