@@ -294,6 +294,17 @@ const CommunityForum = () => {
           {/* Topics List */}
           <div className="flex-1 overflow-y-auto">
             <div className="p-6">
+              {error && (
+                <div className="bg-destructive/10 border border-destructive text-destructive px-4 py-3 rounded-lg mb-4">
+                  <p>{error}</p>
+                  <button
+                    onClick={fetchTopics}
+                    className="mt-2 text-sm underline hover:no-underline"
+                  >
+                    Try again
+                  </button>
+                </div>
+              )}
               {isLoading ? (
                 <div className="space-y-4">
                   {[...Array(6)]?.map((_, index) => (
