@@ -23,6 +23,9 @@ function UserProfile() {
   const [activeTab, setActiveTab] = useState('profile');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingPreferences, setIsLoadingPreferences] = useState(true);
+  const [isLoadingNotifications, setIsLoadingNotifications] = useState(true);
+  const [isLoadingImpact, setIsLoadingImpact] = useState(true);
 
   // User data state
   const [userData, setUserData] = useState({
