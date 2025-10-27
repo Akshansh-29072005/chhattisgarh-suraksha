@@ -84,6 +84,81 @@ function UserProfile() {
     fetchUserData();
   }, [navigate]);
 
+  // Fetch environmental preferences from backend
+  React.useEffect(() => {
+    const fetchPreferences = async () => {
+      try {
+        setIsLoadingPreferences(true);
+        const response = await userAPI.getPreferences();
+        if (response.data) {
+          setEnvironmentalPreferences(response.data);
+        }
+      } catch (error) {
+        console.error('Failed to fetch environmental preferences:', error);
+        // Keep default values on error
+      } finally {
+        setIsLoadingPreferences(false);
+      }
+    };
+
+    const token = localStorage.getItem('auth_token');
+    if (token) {
+      fetchPreferences();
+    } else {
+      setIsLoadingPreferences(false);
+    }
+  }, []);
+
+  // Fetch notification settings from backend
+  React.useEffect(() => {
+    const fetchNotificationSettings = async () => {
+      try {
+        setIsLoadingNotifications(true);
+        const response = await userAPI.getNotificationSettings();
+        if (response.data) {
+          setNotificationSettings(response.data);
+        }
+      } catch (error) {
+        console.error('Failed to fetch notification settings:', error);
+        // Keep default values on error
+      } finally {
+        setIsLoadingNotifications(false);
+      }
+    };
+
+    const token = localStorage.getItem('auth_token');
+    if (token) {
+      fetchNotificationSettings();
+    } else {
+      setIsLoadingNotifications(false);
+    }
+  }, []);
+
+  // Fetch impact statistics from backend
+  React.useEffect(() => {
+    const fetchImpactStats = async () => {
+      try {
+        setIsLoadingImpact(true);
+        const response = await userAPI.getImpactStats();
+        if (response.data) {
+          setImpactData(response.data);
+        }
+      } catch (error) {
+        console.error('Failed to fetch impact statistics:', error);
+        // Keep default values on error
+      } finally {
+        setIsLoadingImpact(false);
+      }
+    };
+
+    const token = localStorage.getItem('auth_token');
+    if (token) {
+      fetchImpactStats();
+    } else {
+      setIsLoadingImpact(false);
+    }
+  }, []);
+
   // Environmental preferences state - loaded from backend
   const [environmentalPreferences, setEnvironmentalPreferences] = useState({
     dashboardWidgets: {},
