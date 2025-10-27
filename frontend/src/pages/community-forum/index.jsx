@@ -9,6 +9,7 @@ import ForumSidebar from './components/ForumSlidebar';
 import ForumFilters from './components/ForumFilters';
 import Icon from '../../components/AppIcon';
 import Button from '../../components/ui/Button';
+import { forumAPI } from '../../utils/forum-api';
 
 const CommunityForum = () => {
   const navigate = useNavigate();
@@ -26,7 +27,33 @@ const CommunityForum = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
-  // Mock topics data
+  useEffect(() => {
+    loadTopics();
+  }, [selectedCategory, filters]);
+
+  const loadTopics = async () => {
+    setIsLoading(true);
+    try {
+      const response = await forumAPI.getAllTopics({
+        category: selectedCategory,
+        sort: filters.sort,
+        status: filters.status,
+        search: searchQuery
+      });
+      const topicsData = response.data.data.topics || [];
+      setTopics(topicsData);
+      setFilteredTopics(topicsData);
+    } catch (err) {
+      console.error('Failed to load topics:', err);
+      // Fallback to empty
+      setTopics([]);
+      setFilteredTopics([]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Fallback mock data if API fails
   const mockTopics = [
     {
       id: 1,
@@ -150,14 +177,6 @@ const CommunityForum = () => {
     }
   ];
 
-  useEffect(() => {
-    // Simulate loading
-    setTimeout(() => {
-      setTopics(mockTopics);
-      setFilteredTopics(mockTopics);
-      setIsLoading(false);
-    }, 1000);
-  }, []);
 
   useEffect(() => {
     filterTopics();
@@ -220,28 +239,18 @@ const CommunityForum = () => {
   };
 
   const handleCreateTopic = async (topicData) => {
-    const newTopic = {
-      id: topics?.length + 1,
-      title: topicData?.title,
-      preview: topicData?.content?.substring(0, 150) + '...',
-      category: topicData?.category,
-      author: {
-        name: "Current User",
-        avatar: null,
-        badge: "Community Member"
-      },
-      replyCount: 0,
-      viewCount: 1,
-      upvotes: 0,
-      downvotes: 0,
-      userVote: null,
-      lastActivity: new Date(),
-      isPinned: false,
-      isLocked: false,
-      tags: topicData?.tags
-    };
-
-    setTopics(prev => [newTopic, ...prev]);
+    try {
+      await forumAPI.createTopic({
+        title: topicData.title,
+        content: topicData.content,
+        category: topicData.category,
+        tags: topicData.tags
+      });
+      // Reload topics after creation
+      loadTopics();
+    } catch (err) {
+      console.error('Failed to create topic:', err);
+    }
   };
 
   const handleTopicClick = (topicId) => {
@@ -249,35 +258,39 @@ const CommunityForum = () => {
     console.log('Navigate to topic:', topicId);
   };
 
-  const handleVote = (topicId, voteType) => {
-    setTopics(prev => prev?.map(topic => {
-      if (topic?.id === topicId) {
-        const currentVote = topic?.userVote;
-        let newUpvotes = topic?.upvotes;
-        let newDownvotes = topic?.downvotes;
-        let newUserVote = voteType;
+  const handleVote = async (topicId, voteType) => {
+    try {
+      await forumAPI.voteTopic(topicId, voteType);
+      // Optimistically update UI
+      setTopics(prev => prev?.map(topic => {
+        if (topic?.id === topicId) {
+          const currentVote = topic?.userVote;
+          let newUpvotes = topic?.upvotes || 0;
+          let newDownvotes = topic?.downvotes || 0;
+          let newUserVote = voteType;
 
-        // Remove previous vote
-        if (currentVote === 'up') newUpvotes--;
-        if (currentVote === 'down') newDownvotes--;
+          if (currentVote === 'up') newUpvotes--;
+          if (currentVote === 'down') newDownvotes--;
 
-        // Add new vote if different from current
-        if (currentVote === voteType) {
-          newUserVote = null; // Remove vote if clicking same button
-        } else {
-          if (voteType === 'up') newUpvotes++;
-          if (voteType === 'down') newDownvotes++;
+          if (currentVote === voteType) {
+            newUserVote = null;
+          } else {
+            if (voteType === 'up') newUpvotes++;
+            if (voteType === 'down') newDownvotes++;
+          }
+
+          return {
+            ...topic,
+            upvotes: newUpvotes,
+            downvotes: newDownvotes,
+            userVote: newUserVote
+          };
         }
-
-        return {
-          ...topic,
-          upvotes: newUpvotes,
-          downvotes: newDownvotes,
-          userVote: newUserVote
-        };
-      }
-      return topic;
-    }));
+        return topic;
+      }));
+    } catch (err) {
+      console.error('Failed to vote:', err);
+    }
   };
 
   const handleSearch = (query) => {

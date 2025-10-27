@@ -5,12 +5,18 @@ import { errorHandler } from './middleware/error.middleware.js';
 import { dbConnect } from './config/database.js';
 import reportsRoutes from './routes/reports.routes.js';
 import * as blockchain from './services/blockchain.service.js';
+import ForumService from './services/forum.service.js';
+import UserActivityService from './services/user-activity.service.js';
 
 // Import routes
 import authRoutes from './routes/auth.routes.js';
 import statusRoutes from './routes/status.routes.js';
 import userRoutes from './routes/users.routes.js';
 import metricsRoutes from './routes/metrics.routes.js';
+import mlRoutes from './routes/ml.routes.js';
+import forumRoutes from './routes/forum.routes.js';
+import analyticsRoutes from './routes/analytics.routes.js';
+import userActivityRoutes from './routes/user-activity.routes.js';
 
 // Load environment variables
 dotenv.config();
@@ -110,7 +116,11 @@ app.get('/', (req, res) => {
       auth: '/api/auth',
       status: '/api/status',
       users: '/api/users',
-      metrics: '/api/metrics'
+      metrics: '/api/metrics',
+      ml: '/api/ml',
+      reports: '/api/reports',
+      forum: '/api/forum',
+      analytics: '/api/analytics'
     }
   });
 });
@@ -118,9 +128,13 @@ app.get('/', (req, res) => {
 
 app.use('/api/auth', authRoutes);
 app.use('/api/status', statusRoutes);
-app.use('/api/users', userRoutes);
+app.use('/api/users', userActivityRoutes); // User activity routes (stats, activity, leaderboard)
+app.use('/api/users', userRoutes); // User profile routes
 app.use('/api/metrics', metricsRoutes);
 app.use('/api/reports', reportsRoutes);
+app.use('/api/ml', mlRoutes);
+app.use('/api/forum', forumRoutes);
+app.use('/api/analytics', analyticsRoutes);
 
 // Catch-all route for debugging
 app.use((req, res) => {
@@ -155,7 +169,15 @@ import http from 'http';
 
 dbConnect().then(async () => {
   console.log('✅ Database connected');
-  
+
+  // Initialize database tables
+  try {
+    await ForumService.initialize();
+    await UserActivityService.createTables();
+  } catch (err) {
+    console.error('⚠️ Table initialization warning:', err.message);
+  }
+
   const server = http.createServer(app);
   
   // Start server first
