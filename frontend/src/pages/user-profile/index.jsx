@@ -84,90 +84,34 @@ function UserProfile() {
     fetchUserData();
   }, [navigate]);
 
-  // Mock environmental preferences
+  // Environmental preferences state - loaded from backend
   const [environmentalPreferences, setEnvironmentalPreferences] = useState({
-    dashboardWidgets: {
-      air_quality: true,
-      water_quality: true,
-      temperature: true,
-      noise_levels: false,
-      vegetation: true,
-      traffic: false,
-      emissions: true,
-      weather: true
-    },
-    alertThresholds: {
-      air_quality: 100,
-      water_quality: 75,
-      noise_levels: 70,
-      temperature: 35
-    },
+    dashboardWidgets: {},
+    alertThresholds: {},
     measurementUnit: 'metric',
     dataRefreshRate: '15',
     showPredictions: true,
     enableAutoAlerts: true
   });
 
-  // Mock notification settings
+  // Notification settings state - loaded from backend
   const [notificationSettings, setNotificationSettings] = useState({
-    deliveryMethods: {
-      email: true,
-      sms: false,
-      push: true,
-      in_app: true
-    },
-    notifications: {
-      environmental_alerts: {
-        email: true,
-        push: true,
-        in_app: true
-      },
-      air_quality: {
-        email: true,
-        push: true,
-        in_app: true
-      },
-      water_quality: {
-        email: true,
-        push: true,
-        in_app: true
-      },
-      community_updates: {
-        email: false,
-        push: true,
-        in_app: true
-      },
-      report_status: {
-        email: true,
-        push: true,
-        in_app: true
-      },
-      system_updates: {
-        email: false,
-        in_app: true
-      }
-    },
-    frequency: {
-      environmental_alerts: 'immediate',
-      air_quality: 'immediate',
-      water_quality: 'immediate',
-      community_updates: 'daily',
-      report_status: 'immediate',
-      system_updates: 'weekly'
-    },
+    deliveryMethods: {},
+    notifications: {},
+    frequency: {},
     quietHours: '22-08',
     locationBased: true,
     predictiveAlerts: true,
     communityDigest: true
   });
 
-  // Mock impact data
-  const impactData = {
-    reportsSubmitted: 47,
-    communityInteractions: 156,
-    dataPointsContributed: 1203,
-    environmentalScore: 8.7
-  };
+  // Impact data state - loaded from backend
+  const [impactData, setImpactData] = useState({
+    reportsSubmitted: 0,
+    communityInteractions: 0,
+    dataPointsContributed: 0,
+    environmentalScore: 0
+  });
 
   const tabs = [
     { id: 'profile', label: 'Profile', icon: 'User', component: ProfileHeader },
