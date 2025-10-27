@@ -1,10 +1,64 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Icon from '../../../components/AppIcon';
 import Button from '../../../components/ui/Button';
 import Select from '../../../components/ui/Select';
+import { mlAPI } from '../../../utils/ml-api';
 
 const MLInsights = () => {
   const [selectedModel, setSelectedModel] = useState('pollution_hotspots');
+  const [loading, setLoading] = useState(false);
+  const [hotspotPredictions, setHotspotPredictions] = useState([]);
+  const [forecastData, setForecastData] = useState(null);
+  const [riskAssessment, setRiskAssessment] = useState(null);
+  const [patternInsights, setPatternInsights] = useState([]);
+
+  useEffect(() => {
+    loadMLData();
+  }, [selectedModel]);
+
+  const loadMLData = async () => {
+    setLoading(true);
+    try {
+      switch (selectedModel) {
+        case 'pollution_hotspots':
+          const hotspotsRes = await mlAPI.getHotspots();
+          setHotspotPredictions(hotspotsRes.data.data);
+          break;
+        case 'air_quality_forecast':
+          const forecastRes = await mlAPI.getForecast();
+          setForecastData(forecastRes.data.data);
+          break;
+        case 'risk_assessment':
+          const riskRes = await mlAPI.getRiskAssessment();
+          setRiskAssessment(riskRes.data.data);
+          break;
+        case 'pattern_recognition':
+          const patternsRes = await mlAPI.getPatterns();
+          setPatternInsights(patternsRes.data.data);
+          break;
+      }
+    } catch (err) {
+      console.error('Failed to load ML data:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleExport = () => {
+    let dataToExport;
+    switch (selectedModel) {
+      case 'pollution_hotspots': dataToExport = hotspotPredictions; break;
+      case 'air_quality_forecast': dataToExport = forecastData; break;
+      case 'risk_assessment': dataToExport = riskAssessment; break;
+      case 'pattern_recognition': dataToExport = patternInsights; break;
+    }
+    const blob = new Blob([JSON.stringify(dataToExport, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `ml-${selectedModel}-${new Date().toISOString()}.json`;
+    a.click();
+  };
 
   const modelOptions = [
     { value: 'pollution_hotspots', label: 'Pollution Hotspot Prediction' },
@@ -13,84 +67,6 @@ const MLInsights = () => {
     { value: 'pattern_recognition', label: 'Pattern Recognition' }
   ];
 
-  // Mock ML model results
-  const hotspotPredictions = [
-    {
-      id: 1,
-      location: 'Industrial Zone East',
-      coordinates: [40.6892, -74.0445],
-      riskScore: 0.89,
-      confidence: 0.92,
-      predictedPeak: '2025-10-08 09:00:00',
-      factors: ['Heavy traffic', 'Industrial emissions', 'Weather conditions'],
-      severity: 'High'
-    },
-    {
-      id: 2,
-      location: 'Downtown Intersection',
-      coordinates: [40.7128, -74.0060],
-      riskScore: 0.74,
-      confidence: 0.85,
-      predictedPeak: '2025-10-08 17:30:00',
-      factors: ['Rush hour traffic', 'Construction activity'],
-      severity: 'Medium'
-    },
-    {
-      id: 3,
-      location: 'Harbor District',
-      coordinates: [40.7074, -74.0113],
-      riskScore: 0.61,
-      confidence: 0.78,
-      predictedPeak: '2025-10-08 12:15:00',
-      factors: ['Ship emissions', 'Wind patterns'],
-      severity: 'Medium'
-    }
-  ];
-
-  const forecastData = {
-    model: 'LSTM Neural Network',
-    accuracy: 0.87,
-    lastTrained: '2025-10-06 22:00:00',
-    predictions: [
-      { time: '06:00', pm25: 65, confidence: 0.89 },
-      { time: '12:00', pm25: 89, confidence: 0.92 },
-      { time: '18:00', pm25: 112, confidence: 0.85 },
-      { time: '24:00', pm25: 78, confidence: 0.88 }
-    ]
-  };
-
-  const riskAssessment = {
-    overallRisk: 'Moderate',
-    healthScore: 72,
-    vulnerablePopulation: 15420,
-    recommendations: [
-      'Limit outdoor activities during peak hours (8-10 AM, 5-7 PM)',
-      'Use air purifiers in indoor spaces',
-      'Wear N95 masks when outdoors in high-risk areas',
-      'Monitor air quality alerts regularly'
-    ]
-  };
-
-  const patternInsights = [
-    {
-      pattern: 'Weekly Cycle',
-      description: 'PM2.5 levels consistently peak on weekdays (Mon-Fri) due to increased traffic and industrial activity',
-      confidence: 0.94,
-      impact: 'High'
-    },
-    {
-      pattern: 'Weather Correlation',
-      description: 'Strong negative correlation (-0.72) between wind speed and pollution concentration',
-      confidence: 0.88,
-      impact: 'High'
-    },
-    {
-      pattern: 'Seasonal Variation',
-      description: 'Winter months show 35% higher pollution levels due to heating systems and atmospheric conditions',
-      confidence: 0.91,
-      impact: 'Medium'
-    }
-  ];
 
   const getSeverityColor = (severity) => {
     switch (severity?.toLowerCase()) {
