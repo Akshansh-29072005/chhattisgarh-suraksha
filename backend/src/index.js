@@ -12,6 +12,7 @@ import statusRoutes from './routes/status.routes.js';
 import userRoutes from './routes/users.routes.js';
 import metricsRoutes from './routes/metrics.routes.js';
 import mlRoutes from './routes/ml.routes.js';
+import forumRoutes from './routes/forum.routes.js';
 
 // Load environment variables
 dotenv.config();
