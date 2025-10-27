@@ -114,7 +114,8 @@ app.get('/', (req, res) => {
       users: '/api/users',
       metrics: '/api/metrics',
       ml: '/api/ml',
-      reports: '/api/reports'
+      reports: '/api/reports',
+      forum: '/api/forum'
     }
   });
 });
