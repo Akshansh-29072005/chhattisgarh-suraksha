@@ -111,7 +111,9 @@ app.get('/', (req, res) => {
       auth: '/api/auth',
       status: '/api/status',
       users: '/api/users',
-      metrics: '/api/metrics'
+      metrics: '/api/metrics',
+      ml: '/api/ml',
+      reports: '/api/reports'
     }
   });
 });
