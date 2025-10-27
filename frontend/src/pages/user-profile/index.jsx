@@ -275,13 +275,19 @@ function UserProfile() {
     }
   };
 
-  if (isLoading) {
+  // Show loading spinner while any critical data is loading
+  const isAnyLoading = isLoading || isLoadingPreferences || isLoadingNotifications || isLoadingImpact;
+
+  if (isAnyLoading) {
     return (
       <div className="min-h-screen bg-background">
         <Header />
         <AlertNotificationBar />
         <div className="flex items-center justify-center min-h-screen">
-          <Icon name="Loader2" size={32} className="animate-spin text-primary" />
+          <div className="text-center">
+            <Icon name="Loader2" size={32} className="animate-spin text-primary mx-auto mb-2" />
+            <p className="text-sm text-muted-foreground">Loading profile data...</p>
+          </div>
         </div>
       </div>
     );
