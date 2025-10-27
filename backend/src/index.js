@@ -5,6 +5,8 @@ import { errorHandler } from './middleware/error.middleware.js';
 import { dbConnect } from './config/database.js';
 import reportsRoutes from './routes/reports.routes.js';
 import * as blockchain from './services/blockchain.service.js';
+import ForumService from './services/forum.service.js';
+import UserActivityService from './services/user-activity.service.js';
 
 // Import routes
 import authRoutes from './routes/auth.routes.js';
