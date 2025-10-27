@@ -117,7 +117,8 @@ app.get('/', (req, res) => {
       metrics: '/api/metrics',
       ml: '/api/ml',
       reports: '/api/reports',
-      forum: '/api/forum'
+      forum: '/api/forum',
+      analytics: '/api/analytics'
     }
   });
 });
