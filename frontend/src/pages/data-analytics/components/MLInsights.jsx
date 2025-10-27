@@ -292,8 +292,10 @@ const MLInsights = () => {
             iconName="RefreshCw"
             iconPosition="left"
             size="sm"
+            onClick={loadMLData}
+            disabled={loading}
           >
-            Retrain Model
+            {loading ? 'Loading...' : 'Refresh'}
           </Button>
 
           <Button
@@ -301,6 +303,7 @@ const MLInsights = () => {
             iconName="Download"
             iconPosition="left"
             size="sm"
+            onClick={handleExport}
           >
             Export Results
           </Button>
