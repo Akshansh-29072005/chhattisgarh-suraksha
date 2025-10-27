@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Icon from '../../../components/AppIcon';
 import Button from '../../../components/ui/Button';
 import Input from '../../../components/ui/Input';
 import Select from '../../../components/ui/Select';
+import { analyticsAPI } from '../../../utils/analytics-api';
 
 const DataTable = ({ onExportData }) => {
   const [searchQuery, setSearchQuery] = useState('');
@@ -11,9 +12,34 @@ const DataTable = ({ onExportData }) => {
   const [selectedRows, setSelectedRows] = useState([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [mockData, setMockData] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(false);
 
-  // Mock environmental data
-  const mockData = [
+  useEffect(() => {
+    loadData();
+  }, [currentPage, itemsPerPage, sortField, sortDirection, searchQuery]);
+
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      const response = await analyticsAPI.getData({
+        limit: itemsPerPage,
+        offset: (currentPage - 1) * itemsPerPage,
+        sort_field: sortField,
+        sort_direction: sortDirection,
+        search: searchQuery
+      });
+      setMockData(response.data.data.records || []);
+      setTotal(response.data.data.total || 0);
+    } catch (err) {
+      console.error('Failed to load data:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fallbackMockData = [
     {
       id: 1,
       timestamp: '2025-10-07 14:30:00',
