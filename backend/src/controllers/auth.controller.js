@@ -2,10 +2,23 @@ import jwt from 'jsonwebtoken';
 import twilio from 'twilio';
 import { query } from '../config/database.js';
 
-const twilioClient = twilio(
-  process.env.TWILIO_ACCOUNT_SID,
-  process.env.TWILIO_AUTH_TOKEN
-);
+// Initialize Twilio client safely. In environments where Twilio credentials
+// are not provided (e.g., local dev without SMS), we should not throw and
+// instead disable SMS send functionality. Twilio requires an accountSid
+// that starts with "AC"; guard against invalid/missing values.
+let twilioClient = null;
+try {
+  const sid = process.env.TWILIO_ACCOUNT_SID;
+  const token = process.env.TWILIO_AUTH_TOKEN;
+  if (sid && sid.startsWith('AC') && token) {
+    twilioClient = twilio(sid, token);
+  } else {
+    console.warn('Twilio credentials missing or invalid; SMS functionality disabled');
+  }
+} catch (e) {
+  console.warn('Failed to initialize Twilio client:', e && e.message ? e.message : e);
+  twilioClient = null;
+}
 
 // Generate a random 6-digit OTP
 const generateOTP = () => {

@@ -46,20 +46,32 @@ const SignUp = () => {
     setIsLoading(true);
 
     try {
-      const response = await authAPI.verifyOTP(formData.phoneNumber, formData.otp);
-      console.log('OTP verification response:', response.data);
+      const data = await authAPI.verifyOTP(formData.phoneNumber, formData.otp);
+      console.log('OTP verification response:', data);
       
-      if (response.data.isNewUser) {
+      if (data.isNewUser || !data.isProfileComplete) {
+        // Save the token and proceed to profile completion
+        localStorage.setItem('auth_token', data.token);
+        if (data.userId) {
+          localStorage.setItem('user_id', data.userId);
+        }
         setStep(3);
       } else {
-        // If user already exists, redirect to login
-        navigate('/login', {
-          state: { message: 'Account already exists. Please login.' }
-        });
+        // User exists and profile is complete, redirect to dashboard
+        localStorage.setItem('auth_token', data.token);
+        if (data.userId) {
+          localStorage.setItem('user_id', data.userId);
+        }
+        navigate('/environmental-dashboard', { replace: true });
       }
     } catch (err) {
       console.error('Failed to verify OTP:', err);
-      setError(err.response?.data?.message || 'Invalid OTP. Please try again.');
+      if (err.message.includes('expired')) {
+        setError('OTP has expired. Please request a new one.');
+        setStep(1); // Go back to phone number input
+      } else {
+        setError(err.response?.data?.message || 'Invalid OTP. Please try again.');
+      }
     } finally {
       setIsLoading(false);
     }
@@ -71,14 +83,21 @@ const SignUp = () => {
     setIsLoading(true);
 
     try {
-      const response = await authAPI.register(formData);
-      console.log('Registration successful:', response.data);
+      const data = await authAPI.register(formData);
+      console.log('Registration successful:', data);
       
-      // Save auth token
-      localStorage.setItem('auth_token', response.data.token);
-      
-      // Redirect to environmental dashboard
-      navigate('/environmental-dashboard', { replace: true });
+      if (data.token) {
+        // Update auth token with the new one from registration
+        localStorage.setItem('auth_token', data.token);
+        if (data.userId) {
+          localStorage.setItem('user_id', data.userId);
+        }
+        
+        // Redirect to environmental dashboard
+        navigate('/environmental-dashboard', { replace: true });
+      } else {
+        throw new Error('No authentication token received after registration');
+      }
     } catch (err) {
       console.error('Failed to register:', err);
       setError(err.response?.data?.message || 'Failed to create account. Please try again.');

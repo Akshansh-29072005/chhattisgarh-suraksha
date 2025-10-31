@@ -5,6 +5,7 @@ import Button from '../../components/ui/Button';
 import Header from '../../components/ui/Header';
 import AlertNotificationBar from '../../components/ui/AlertNotificationBar';
 import { reportService } from '../../utils/report';
+import api from '../../utils/api';
 import { storeMedia, incrementReportCount, checkAndAwardAchievements, ACHIEVEMENTS } from '../../utils/mediaStorage';
 
 // Import components
@@ -124,6 +125,22 @@ const CitizenReporting = () => {
       }
       
       alert('Report submitted successfully and stored securely on blockchain! You will receive updates on the investigation progress.');
+
+      // Fetch updated user stats from server (if authenticated)
+      try {
+        const userId = localStorage.getItem('user_id');
+        if (userId) {
+          const statsResp = await api.get(`/users/${userId}/stats`);
+          const stats = statsResp?.data?.data;
+          if (stats) {
+            const msg = `Reports: ${stats.reportsSubmitted} • Impact: ${stats.impactScore}`;
+            // Show a simple alert for now — can be replaced with a toast component
+            alert(`Your contribution has been recorded. ${msg}`);
+          }
+        }
+      } catch (err) {
+        console.warn('Could not fetch updated user stats:', err);
+      }
       
       // Reset form
       setReportData({

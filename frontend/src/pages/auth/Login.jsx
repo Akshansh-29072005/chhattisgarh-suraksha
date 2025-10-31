@@ -63,16 +63,28 @@ const Login = () => {
       // Verify OTP and get user data
       const data = await authAPI.verifyOTP(phoneNumber, otp);
       
-      // Store user ID if available
-      if (data.userId) {
-        localStorage.setItem('user_id', data.userId);
+      // Store user ID and token
+      if (data.token) {
+        localStorage.setItem('auth_token', data.token);
+        if (data.userId) {
+          localStorage.setItem('user_id', data.userId);
+        }
       }
 
-      // Redirect based on user status
-      if (data.isNewUser || !data.isProfileComplete) {
-        window.location.replace('/signup');
+      // Only new users should be redirected to signup
+      if (data.isNewUser) {
+        // Pass the phone number to the signup page to continue registration
+        navigate('/signup', { 
+          replace: true,
+          state: { 
+            phoneNumber,
+            isNewUser: true
+          }
+        });
       } else {
-        window.location.replace('/environmental-dashboard');
+        // Existing users go to dashboard, even if profile is incomplete
+        // They can complete their profile later from the user profile page
+        navigate('/environmental-dashboard', { replace: true });
       }
     } catch (err) {
       console.error('Failed to verify OTP:', err);

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { environmentalAPI } from '../utils/environmental';
 
-const REFRESH_INTERVAL = 5 * 60 * 1000; // 5 minutes
+const REFRESH_INTERVAL = 30 * 60 * 1000; // 30 minutes
 const MAX_RETRIES = 3;
 const INITIAL_RETRY_DELAY = 1000;
 
@@ -107,13 +107,31 @@ export const useEnvironmentalData = () => {
 
       console.log('[useEnvironmentalData] Starting data fetch...');
       
+      // Check for auth token
+      const token = localStorage.getItem('auth_token');
+      if (!token) {
+        throw new Error('Authentication required. Please log in.');
+      }
+
       // Fetch metrics and alerts separately to handle individual failures
       let metricsResponse, alertsResponse;
       
       try {
         metricsResponse = await environmentalAPI.getCurrentMetrics();
+        // Validate the response
+        if (!metricsResponse?.data?.success) {
+          throw new Error('Invalid metrics response format');
+        }
       } catch (metricsError) {
         console.error('Failed to fetch metrics:', metricsError);
+        
+        // Handle specific error cases
+        if (metricsError.response?.status === 401 || metricsError.response?.status === 403) {
+          localStorage.removeItem('auth_token');
+          window.location.href = '/login';
+          return;
+        }
+        
         // Provide fallback metrics data
         metricsResponse = {
           data: {
@@ -138,20 +156,49 @@ export const useEnvironmentalData = () => {
         alertsResponse = { data: { success: true, data: [] } };
       }
 
-      // Validate metrics response
-      if (metricsResponse?.data?.success) {
-        setMetrics(metricsResponse.data.data);
+          // Process and validate metrics response
+      const rawData = metricsResponse?.data?.data || {};
+      const processedMetrics = {
+        aqi: parseFloat(rawData.aqi) || 0,
+        pm25: parseFloat(rawData.pm25) || 0,
+        pm10: parseFloat(rawData.pm10) || 0,
+        temperature: parseFloat(rawData.temperature) || 0,
+        humidity: parseFloat(rawData.humidity) || 0,
+        wind_speed: parseFloat(rawData.wind_speed) || 0,
+        wind_direction: rawData.wind_direction || 'N/A',
+        precipitation: parseFloat(rawData.precipitation) || 0,
+        last_updated: rawData.last_updated || new Date().toISOString(),
+        // Additional metrics
+        no2: parseFloat(rawData.no2) || 0,
+        so2: parseFloat(rawData.so2) || 0,
+        o3: parseFloat(rawData.o3) || 0,
+        co: parseFloat(rawData.co) || 0,
+        pressure: parseFloat(rawData.pressure) || 0
+      };
+      
+      // Only update metrics if we have at least some valid data
+      if (Object.values(processedMetrics).some(val => val !== null && val !== undefined)) {
+        setMetrics(processedMetrics);
       } else {
-        throw new Error('Invalid metrics response');
+        console.warn('No valid metrics data available');
+        setMetrics({
+          aqi: null,
+          pm25: null,
+          pm10: null,
+          temperature: null,
+          humidity: null,
+          wind_speed: null,
+          wind_direction: null,
+          precipitation: null,
+          last_updated: new Date().toISOString()
+        });
       }
 
-      // Validate alerts response
-      if (alertsResponse?.data?.success) {
-        setAlerts(alertsResponse.data.data || []);
-      } else {
-        console.warn('No alerts data available');
-        setAlerts([]);
-      }
+      // Process and validate alerts response
+      const processedAlerts = Array.isArray(alertsResponse?.data?.data) 
+        ? alertsResponse.data.data 
+        : [];
+      setAlerts(processedAlerts);
 
       // Reset retry count on success
       setRetryCount(0);

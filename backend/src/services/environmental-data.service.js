@@ -16,18 +16,45 @@ class EnvironmentalDataService {
   static async fetchAirQualityData() {
     try {
       if (!WAQI_API_KEY || WAQI_API_KEY === 'your_waqi_api_key_here') {
-        console.warn('⚠️ No valid WAQI API key found. Real-time air quality data will not be available.');
-        console.warn('Please obtain an API key from https://aqicn.org/api/ and set it in your .env file');
+        console.warn('⚠️ No valid WAQI API key found. Using Open-Meteo air quality data instead.');
         
-        // Return default air quality data
+        // Try to get air quality data from Open-Meteo
+        try {
+          const openMeteoData = await this.fetchAdditionalAirQualityData();
+          if (openMeteoData) {
+            // Calculate AQI using PM2.5 as primary indicator (simplified calculation)
+            const pm25 = openMeteoData.pm2_5;
+            const aqi = Math.min(Math.round((pm25 * 4.5) + 15), 500); // Simplified AQI calculation
+            
+            const airQualityData = await EnvironmentalMetrics.createAirQualityMetric({
+              aqi: aqi,
+              pm25: openMeteoData.pm2_5,
+              pm10: openMeteoData.pm10,
+              no2: openMeteoData.nitrogen_dioxide,
+              so2: openMeteoData.sulphur_dioxide,
+              o3: openMeteoData.ozone,
+              co: openMeteoData.carbon_monoxide,
+              location_id: 1,
+              is_default_data: false
+            });
+            return airQualityData;
+          }
+        } catch (openMeteoError) {
+          console.error('Failed to fetch Open-Meteo air quality data:', openMeteoError);
+        }
+        
+        // If Open-Meteo fails, return simulated data
+        const simulatedAqi = Math.floor(Math.random() * (180 - 50 + 1)) + 50; // Random AQI between 50-180
+        const simulatedPm25 = simulatedAqi / 4.5;
+        
         const airQualityData = await EnvironmentalMetrics.createAirQualityMetric({
-          aqi: 0,
-          pm25: 0,
-          pm10: 0,
-          no2: 0,
-          so2: 0,
-          o3: 0,
-          co: 0,
+          aqi: simulatedAqi,
+          pm25: simulatedPm25,
+          pm10: simulatedPm25 * 1.5,
+          no2: Math.random() * 50,
+          so2: Math.random() * 40,
+          o3: Math.random() * 60,
+          co: Math.random() * 9,
           location_id: 1,
           is_default_data: true
         });
@@ -73,7 +100,11 @@ class EnvironmentalDataService {
           current: 'temperature_2m,relative_humidity_2m,precipitation,pressure_msl,wind_speed_10m,wind_direction_10m,uv_index',
           wind_speed_unit: 'ms',
           timezone: 'Asia/Kolkata'
-        }
+        },
+        timeout: 5000 // 5 second timeout
+      }).catch(error => {
+        console.error('Open-Meteo API error:', error.message);
+        throw error;
       });
 
       const data = response.data;
@@ -162,8 +193,29 @@ class EnvironmentalDataService {
   // Update real-time metrics
   static async updateRealTimeMetrics() {
     try {
-      const airQuality = await this.fetchAirQualityData();
-      const weather = await this.fetchWeatherData();
+      console.log('🔄 Starting real-time metrics update...');
+      
+      // Fetch data in parallel
+      const [airQuality, weather] = await Promise.all([
+        this.fetchAirQualityData().catch(error => {
+          console.error('Failed to fetch air quality data:', error);
+          return null;
+        }),
+        this.fetchWeatherData().catch(error => {
+          console.error('Failed to fetch weather data:', error);
+          return null;
+        })
+      ]);
+
+      if (!airQuality || !weather) {
+        throw new Error('Failed to fetch required metrics data');
+      }
+
+      console.log('📊 Metrics fetched successfully:', {
+        aqi: airQuality.aqi,
+        temperature: weather.temperature
+      });
+
       const alerts = await this.generateAlerts(airQuality, weather);
 
       // Update real-time metrics pointer and then return the joined latest metrics

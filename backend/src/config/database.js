@@ -1,13 +1,22 @@
 import pkg from 'pg';
 const { Pool } = pkg;
 
-const pool = new Pool({
-  user: 'postgres',
-  host: 'localhost',
-  database: 'chhattisgarh_suraksha',
-  password: 'aawa_lewa',
-  port: 5432
-});
+// Support DATABASE_URL or individual PG_* env vars. When running via docker-compose
+// the compose file sets DATABASE_URL to point to the `postgres` service; prefer
+// that when available. Otherwise fall back to sensible defaults for local dev.
+const connectionString = process.env.DATABASE_URL || null;
+
+const poolConfig = connectionString
+  ? { connectionString }
+  : {
+      user: process.env.PGUSER || process.env.DB_USER || 'postgres',
+      host: process.env.PGHOST || process.env.DB_HOST || 'localhost',
+      database: process.env.PGDATABASE || process.env.DB_NAME || 'chhattisgarh_suraksha',
+      password: process.env.PGPASSWORD || process.env.DB_PASSWORD || 'postgres123',
+      port: process.env.PGPORT || process.env.DB_PORT || 5432
+    };
+
+const pool = new Pool(poolConfig);
 
 export const dbConnect = async () => {
   try {

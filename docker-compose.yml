@@ -26,7 +26,7 @@ services:
       dockerfile: Dockerfile
     container_name: cg-suraksha-backend
     environment:
-      NODE_ENV: production
+      NODE_ENV: development  # Enable development mode for local testing
       PORT: 5000
       DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres123}@postgres:5432/chhattisgarh_suraksha
       JWT_SECRET: ${JWT_SECRET:-change_this_secret_in_production}
@@ -34,30 +34,55 @@ services:
       TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID}
       TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN}
       TWILIO_PHONE_NUMBER: ${TWILIO_PHONE_NUMBER}
+      BLOCKCHAIN_RPC_URL: http://ganache:8545
     volumes:
       - uploads_data:/app/uploads
       - models_data:/app/models
     depends_on:
       postgres:
         condition: service_healthy
+      ganache:
+        condition: service_started  # Changed to service_started to avoid strict health check dependency
     networks:
       - app-network
 
-  # Frontend with Nginx
+  # Local Ethereum JSON-RPC node (Ganache) for blockchain emulation
+  ganache:
+    image: trufflesuite/ganache-cli:latest
+    container_name: cg-suraksha-ganache
+    command: --host 0.0.0.0 --port 8545 --networkId 1337 --chainId 1337
+    # Install wget for healthcheck
+    entrypoint: >
+      /bin/sh -c "
+        apk add --no-cache wget &&
+        node /app/ganache-core.docker.cli.js --host 0.0.0.0 --port 8545 --networkId 1337 --chainId 1337
+      "
+    ports:
+      - "8545:8545"
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD", "nc", "-z", "127.0.0.1", "8545"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+    # Frontend with Nginx
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
     container_name: cg-suraksha-frontend
     ports:
-      - "80:80"
-      - "443:443"
+      - "3000:80"  # Frontend will be accessible at http://localhost:3000
     depends_on:
       - backend
+      - ganache
     networks:
       - app-network
     environment:
-      - VITE_API_URL=http://localhost/api
+      - VITE_API_URL=/api  # Use relative URL for API requests
 
 volumes:
   postgres_data:
@@ -70,3 +95,5 @@ volumes:
 networks:
   app-network:
     driver: bridge
+
+  

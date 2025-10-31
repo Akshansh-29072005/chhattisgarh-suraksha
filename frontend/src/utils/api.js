@@ -2,11 +2,12 @@ import axios from 'axios';
 
 // Create axios instance with base URL
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:5000',
+  baseURL: '/api',  // Always use relative path, nginx will handle routing
   headers: {
     'Content-Type': 'application/json',
   },
   timeout: 30000, // 30 second timeout
+  withCredentials: true // Important for CORS with credentials
 });
 
 // Constants for auth-related functionality
@@ -15,10 +16,10 @@ const USER_ID_KEY = 'user_id';
 
 // List of endpoints that should not trigger auth redirect
 const AUTH_ENDPOINTS = [
-  '/api/auth/send-otp',
-  '/api/auth/verify-otp',
-  '/api/auth/verify',
-  '/api/auth/register'
+  '/auth/send-otp',
+  '/auth/verify-otp',
+  '/auth/verify',
+  '/auth/register'
 ];
 
 // Simple token management functions
@@ -48,7 +49,7 @@ const tokenManager = {
 // Initialize auth token from localStorage
 const storedToken = localStorage.getItem('auth_token');
 if (storedToken) {
-  setupAuthToken(storedToken);
+  tokenManager.setToken(storedToken);
 }
 
 // Add request interceptor to include auth token and handle errors
@@ -94,6 +95,8 @@ api.interceptors.response.use(
     const isAuthEndpoint = AUTH_ENDPOINTS.some(endpoint => 
       error.config?.url?.includes(endpoint)
     );
+    
+    const isAuthError = error.response?.status === 401 || error.response?.status === 403;
     
     if (isAuthError) {
       console.log('[Auth Status]:', {
@@ -175,7 +178,7 @@ api.interceptors.response.use(
       // Only handle auth errors for non-auth endpoints and non-verify endpoints
       if (!isAuthEndpoint && !error.config?.url?.includes('/api/auth/verify')) {
         console.log('[Auth Error]: Handling unauthorized access');
-        await setupAuthToken(null); // This will clear both token and headers
+        tokenManager.clearToken(); // Clear auth state
         
         // Only redirect if we're not already on the login page or in the auth flow
         if (!window.location.pathname.includes('/login') && 
@@ -199,7 +202,7 @@ export const authAPI = {
   // Send OTP
   sendOTP: async (phoneNumber) => {
     try {
-      const response = await api.post('/api/auth/send-otp', { phoneNumber });
+      const response = await api.post('/auth/send-otp', { phoneNumber });
       return response.data;
     } catch (error) {
       throw new Error(error.response?.data?.message || 'Failed to send OTP');
@@ -212,11 +215,13 @@ export const authAPI = {
       // Clear any existing auth state
       tokenManager.clearToken();
       
-      const response = await api.post('/api/auth/verify-otp', { 
+      const response = await api.post('/auth/verify-otp', { 
         phoneNumber, 
         otp,
         timestamp: Date.now()
       });
+
+      console.log('OTP Verification Response:', response.data);
 
       if (!response.data?.token) {
         throw new Error('No authentication token received');
@@ -225,9 +230,16 @@ export const authAPI = {
       // Set the new token
       tokenManager.setToken(response.data.token);
 
-      return response.data;
+      // Return the full response data for the caller to handle
+      return {
+        ...response.data,
+        isNewUser: !!response.data.isNewUser,
+        isProfileComplete: !!response.data.isProfileComplete
+      };
     } catch (error) {
-      if (error.response?.status === 401) {
+      console.error('OTP Verification Error:', error);
+      if (error.response?.status === 401 || 
+          (error.response?.data?.message || '').toLowerCase().includes('expired')) {
         throw new Error('Invalid OTP or OTP has expired');
       }
       throw new Error(error.response?.data?.message || 'Failed to verify OTP');
@@ -242,7 +254,7 @@ export const authAPI = {
         throw new Error('No auth token found');
       }
 
-      const response = await api.get('/api/auth/verify');
+      const response = await api.get('/auth/verify');
       return response.data;
     } catch (error) {
       tokenManager.clearToken();
@@ -252,12 +264,17 @@ export const authAPI = {
 
 //Register user
   register: async (userData) => {
-    return api.post('/api/auth/register', userData);
+    try {
+      const response = await api.post('/auth/register', userData);
+      return response.data;
+    } catch (error) {
+      throw new Error(error.response?.data?.message || 'Failed to register');
+    }
   },
 
   // Check user status
   checkUserStatus: async (phoneNumber) => {
-    return api.get(`/api/status/check/${phoneNumber}`);
+    return api.get(`/status/check/${phoneNumber}`);
   }
 };
 
@@ -265,12 +282,22 @@ export const authAPI = {
 export const userAPI = {
   // Get user profile
   getProfile: async () => {
-    return api.get('/api/users/profile');
+    try {
+      const response = await api.get('/users/profile');
+      return response.data;
+    } catch (error) {
+      throw new Error(error.response?.data?.message || 'Failed to fetch profile');
+    }
   },
 
   // Update user profile
   updateProfile: async (userData) => {
-    return api.put('/api/users/profile', userData);
+    try {
+      const response = await api.put('/users/profile', userData);
+      return response.data;
+    } catch (error) {
+      throw new Error(error.response?.data?.message || 'Failed to update profile');
+    }
   }
 };
 
@@ -285,51 +312,53 @@ export const metricsAPI = {
   // Get current environmental metrics
   getCurrentMetrics: async () => {
     try {
-      const response = await api.get('/api/metrics/current');
+      const response = await api.get('/metrics/current');
       if (!response?.data) {
         throw new Error('Invalid response format from metrics endpoint');
       }
-      return response;
+      return response.data;
     } catch (error) {
       console.error('Failed to fetch metrics:', error);
-      // Return a formatted error that won't crash the UI
-      throw {
-        message: error?.response?.data?.message || error.message || 'Failed to fetch environmental metrics',
-        status: error?.response?.status || 500,
-        originalError: error
-      };
+      throw new Error(error.response?.data?.message || 'Failed to fetch environmental metrics');
     }
   },
 
   // Get active alerts
   getActiveAlerts: async () => {
     try {
-      const response = await api.get('/api/metrics/alerts');
+      const response = await api.get('/metrics/alerts');
       if (!response?.data) {
         throw new Error('Invalid response format from alerts endpoint');
       }
-      return response;
+      return response.data;
     } catch (error) {
       console.error('Failed to fetch alerts:', error);
-      // Return empty alerts array on error to prevent UI crashes
-      return { 
-        data: { 
-          success: true, 
-          data: [], 
-          message: error?.response?.data?.message || error.message 
-        } 
+      return {
+        success: true,
+        data: [],
+        message: error.response?.data?.message || error.message
       };
     }
   },
 
   // Get historical metrics
   getMetricsHistory: async (type, duration) => {
-    return api.get(`/api/metrics/history?type=${type}&duration=${duration}`);
+    try {
+      const response = await api.get(`/metrics/history?type=${type}&duration=${duration}`);
+      return response.data;
+    } catch (error) {
+      throw new Error(error.response?.data?.message || 'Failed to fetch metrics history');
+    }
   },
 
   // Force update metrics (admin only)
   forceUpdate: async () => {
-    return api.post('/api/metrics/update');
+    try {
+      const response = await api.post('/metrics/update');
+      return response.data;
+    } catch (error) {
+      throw new Error(error.response?.data?.message || 'Failed to force update metrics');
+    }
   }
 };
 

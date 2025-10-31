@@ -2,7 +2,45 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { errorHandler } from './middleware/error.middleware.js';
-import { dbConnect } from './config/database.js';
+import { dbConnect, query } from './config/database.js';
+import fs from 'fs/promises';
+import path from 'path';
+// Run gamification migration if tables missing
+async function runGamificationMigration() {
+  try {
+    await query('SELECT 1 FROM user_positions LIMIT 1;');
+    console.log('✅ Gamification tables already exist');
+  } catch (err) {
+    // Table does not exist, run migration
+    console.log('⚡ Running gamification migration...');
+    const migrationPath = path.resolve('./src/migrations/community_gamification.sql');
+    const sql = await fs.readFile(migrationPath, 'utf8');
+    try {
+      // Run the entire SQL file in one query so dollar-quoted functions and triggers are preserved
+      await query(sql);
+    } catch (e) {
+      // If the driver or server rejects multiple statements, try a fallback: split by "\n-- " (simple segments)
+      if (e.message && e.message.toLowerCase().includes('unterminated dollar-quoted string')) {
+        console.error('Migration error (dollar-quote):', e.message);
+      } else {
+        console.warn('Migration full-run failed, attempting safe statement execution fallback:', e.message);
+        const parts = sql.split(/;\s*\n/);
+        for (const part of parts) {
+          if (part.trim()) {
+            try {
+              await query(part);
+            } catch (innerErr) {
+              if (!innerErr.message.includes('already exists')) {
+                console.error('Migration error:', innerErr.message);
+              }
+            }
+          }
+        }
+      }
+    }
+    console.log('✅ Gamification tables created');
+  }
+}
 import reportsRoutes from './routes/reports.routes.js';
 import * as blockchain from './services/blockchain.service.js';
 import ForumService from './services/forum.service.js';
@@ -65,26 +103,48 @@ app.use((req, res, next) => {
 // Middleware
 const corsOptions = {
   origin: function (origin, callback) {
+    console.log('🔎 CORS Request');
+    console.log('──────────────────────────────────');
+    console.log('� Origin:', origin);
+    console.log('🔧 NODE_ENV:', process.env.NODE_ENV);
+    
     const allowedOrigins = [
-      'http://localhost:3000',  // Create React App default
-      'http://localhost:5173',  // Vite default
-      'http://127.0.0.1:5173', // Vite alternative
-      'http://localhost:4173', // Vite preview
-      'http://localhost:4028'   
+      'http://localhost:3000',
+      'http://127.0.0.1:3000',
+      'http://localhost:5000',
+      'http://127.0.0.1:5000',
+      // Add your production domain here when ready
     ];
     
-    // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) return callback(null, true);
-    
-    if (allowedOrigins.indexOf(origin) !== -1 || process.env.NODE_ENV === 'development') {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
+    // Allow requests with no origin (like mobile apps or curl)
+    if (!origin) {
+      console.log('✅ Allowing request with no origin');
+      return callback(null, true);
     }
+
+    // Development mode - only allow localhost variants
+    if (process.env.NODE_ENV === 'development') {
+      const lower = origin.toLowerCase();
+      if (lower.includes('localhost') || lower.includes('127.0.0.1')) {
+        console.log('✅ Development mode: Allowing localhost origin');
+        return callback(null, true);
+      }
+    }
+
+    // Production mode - strict origin checking
+    if (allowedOrigins.includes(origin)) {
+      console.log('✅ Production mode: Origin allowed');
+      return callback(null, true);
+    }
+
+    // Reject all other origins
+    console.log('❌ Origin rejected');
+    callback(new Error('Not allowed by CORS'));
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
+  // Do not restrict allowed headers here so preflight can accept requested headers
+  // (Leaving this unspecified lets the cors middleware echo Access-Control-Request-Headers)
   exposedHeaders: ['Content-Length', 'Content-Type']
 };
 
@@ -174,6 +234,7 @@ dbConnect().then(async () => {
   try {
     await ForumService.initialize();
     await UserActivityService.createTables();
+    await runGamificationMigration();
   } catch (err) {
     console.error('⚠️ Table initialization warning:', err.message);
   }
