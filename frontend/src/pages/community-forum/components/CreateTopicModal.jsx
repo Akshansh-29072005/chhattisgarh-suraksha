@@ -47,6 +47,9 @@ const CreateTopicModal = ({ isOpen, onClose, onSubmit }) => {
       onClose();
     } catch (error) {
       console.error('Failed to create topic:', error);
+      // Show validation error to user
+      const errorMessage = error.response?.data?.message || error.message || 'Failed to create topic';
+      alert(errorMessage);
     } finally {
       setIsSubmitting(false);
     }

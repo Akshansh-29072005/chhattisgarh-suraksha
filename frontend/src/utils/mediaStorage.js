@@ -5,45 +5,116 @@ const STORAGE_KEYS = {
   USER_ACHIEVEMENTS: 'user_achievements'
 };
 
-// Convert File/Blob to base64
-const fileToBase64 = (file) => {
+// Convert File/Blob/URL/data-uri to base64
+const fileToBase64 = async (input) => {
+  // If input is already a data URL string, return it
+  if (typeof input === 'string' && input.startsWith('data:')) {
+    return input;
+  }
+
+  // If input is a URL (blob: or http(s):), fetch it and convert to blob
+  if (typeof input === 'string' && (input.startsWith('blob:') || input.startsWith('http://') || input.startsWith('https://'))) {
+    const resp = await fetch(input);
+    const blob = await resp.blob();
+    input = blob;
+  }
+
   return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = (error) => reject(error);
+    try {
+      if (!(input instanceof Blob)) {
+        return reject(new TypeError('fileToBase64: input is not a Blob or data URL'));
+      }
+      const reader = new FileReader();
+      reader.readAsDataURL(input);
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = (error) => reject(error);
+    } catch (e) {
+      reject(e);
+    }
   });
 };
 
-// Store media files in localStorage
+  // Store media files in localStorage with cleanup
 export const storeMedia = async (files, reportId) => {
   try {
     // Get existing media storage
-    const existingStorage = JSON.parse(localStorage.getItem(STORAGE_KEYS.MEDIA) || '{}');
+    let existingStorage = JSON.parse(localStorage.getItem(STORAGE_KEYS.MEDIA) || '{}');
     
-    // Convert all files to base64
-    const mediaPromises = files.map(async (file) => {
-      const base64 = await fileToBase64(file);
-      return {
-        id: `${reportId}_${Date.now()}_${file.name}`,
-        type: file.type,
-        name: file.name,
-        size: file.size,
-        data: base64,
-        timestamp: Date.now()
-      };
+    // Cleanup old media entries if storage is getting full
+    const storageKeys = Object.keys(existingStorage);
+    if (storageKeys.length > 10) {  // Keep only last 10 reports' media
+      const sortedKeys = storageKeys.sort((a, b) => {
+        const aTime = Math.max(...(existingStorage[a]?.map(m => m.timestamp) || [0]));
+        const bTime = Math.max(...(existingStorage[b]?.map(m => m.timestamp) || [0]));
+        return bTime - aTime;
+      });
+      
+      // Remove older entries
+      const keysToRemove = sortedKeys.slice(10);
+      keysToRemove.forEach(key => delete existingStorage[key]);
+      
+      try {
+        localStorage.setItem(STORAGE_KEYS.MEDIA, JSON.stringify(existingStorage));
+      } catch (e) {
+        console.warn('Failed to cleanup media storage, clearing all:', e);
+        existingStorage = {};
+        localStorage.setItem(STORAGE_KEYS.MEDIA, '{}');
+      }
+    }    // Convert all files to base64
+    const mediaPromises = files.map(async (fileWrapper) => {
+      try {
+        // Support both raw File/Blob objects and wrapper objects { file, url, data, ... }
+        let fileCandidate = fileWrapper && fileWrapper.file ? fileWrapper.file : fileWrapper;
+
+        // If wrapper contains a data property, use it directly
+        if (!fileCandidate && fileWrapper && fileWrapper.data) {
+          return {
+            id: `${reportId}_${Date.now()}_${fileWrapper.name || 'file'}`,
+            type: fileWrapper.type || 'application/octet-stream',
+            name: fileWrapper.name || `file_${Date.now()}`,
+            size: fileWrapper.size || 0,
+            data: fileWrapper.data,
+            timestamp: Date.now()
+          };
+        }
+
+        // If wrapper contains a blob/object URL (URL.createObjectURL), try to use it
+        if (!fileCandidate && fileWrapper && fileWrapper.url) {
+          fileCandidate = fileWrapper.url;
+        }
+
+        const base64 = await fileToBase64(fileCandidate);
+
+        // Determine metadata, preferring actual File info when available
+        const name = fileCandidate?.name || fileWrapper?.name || `file_${Date.now()}`;
+        const type = fileCandidate?.type || fileWrapper?.type || 'application/octet-stream';
+        const size = fileCandidate?.size || fileWrapper?.size || 0;
+
+        return {
+          id: `${reportId}_${Date.now()}_${name}`,
+          type,
+          name,
+          size,
+          data: base64,
+          timestamp: Date.now()
+        };
+      } catch (e) {
+        console.warn('storeMedia: skipping file because it could not be processed', e?.message || e);
+        return null;
+      }
     });
 
-    const mediaFiles = await Promise.all(mediaPromises);
+  const mediaFilesRaw = await Promise.all(mediaPromises);
+  const mediaFiles = mediaFilesRaw.filter(Boolean);
 
-    // Store under report ID
-    existingStorage[reportId] = mediaFiles;
-    
-    // Save back to localStorage
-    localStorage.setItem(STORAGE_KEYS.MEDIA, JSON.stringify(existingStorage));
-    
-    // Return media IDs for reference
-    return mediaFiles.map(file => file.id);
+  // Store under report ID
+  existingStorage[reportId] = mediaFiles;
+
+  // Save back to localStorage
+  localStorage.setItem(STORAGE_KEYS.MEDIA, JSON.stringify(existingStorage));
+
+  // Return media IDs for reference
+  return mediaFiles.map(file => file.id);
   } catch (error) {
     console.error('Error storing media:', error);
     throw error;

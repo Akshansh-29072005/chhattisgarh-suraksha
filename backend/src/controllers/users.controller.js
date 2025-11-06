@@ -28,13 +28,24 @@ export const getUserProfile = async (req, res, next) => {
 
         const user = userResult.rows[0];
 
-        // Get user achievements
+        // Get user achievements with progress
         const achievementsResult = await query(
-            `SELECT a.name, a.icon, a.description, ua.achieved_at
-             FROM user_achievements ua
-             JOIN achievements a ON ua.achievement_id = a.id
-             WHERE ua.user_id = $1
-             ORDER BY ua.achieved_at DESC`,
+            `SELECT 
+               a.id,
+               a.name, 
+               a.icon, 
+               a.description, 
+               a.required_count,
+               ua.progress,
+               ua.achieved_at,
+               CASE 
+                 WHEN ua.progress >= a.required_count THEN true 
+                 ELSE false 
+               END as is_achieved,
+               LEAST(100, ROUND((ua.progress::float / a.required_count::float * 100))) as progress_percent
+             FROM achievements a
+             LEFT JOIN user_achievements ua ON ua.achievement_id = a.id AND ua.user_id = $1
+             ORDER BY a.required_count ASC`,
             [userId]
         );
 
@@ -86,6 +97,77 @@ export const updateUserProfile = async (req, res, next) => {
             email: user.email,
             phoneNumber: user.phone_number,
             location: user.address
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+// Get user activity and achievements
+export const getUserActivity = async (req, res, next) => {
+    try {
+        const { userId } = req.user;
+
+        // Get user points with activity breakdown
+        const pointsResult = await query(
+            `SELECT 
+               activity_type,
+               SUM(points) as points,
+               COUNT(*) as count,
+               MAX(created_at) as last_activity
+             FROM user_activity_points 
+             WHERE user_id = $1
+             GROUP BY activity_type
+             ORDER BY last_activity DESC`,
+            [userId]
+        );
+
+        // Get user position in leaderboard
+        const rankResult = await query(
+            `WITH user_ranks AS (
+               SELECT 
+                 user_id,
+                 SUM(points) as total_points,
+                 RANK() OVER (ORDER BY SUM(points) DESC) as rank
+               FROM user_activity_points
+               GROUP BY user_id
+             )
+             SELECT rank, total_points
+             FROM user_ranks
+             WHERE user_id = $1`,
+            [userId]
+        );
+
+        const totalPoints = rankResult.rows[0]?.total_points || 0;
+        const rank = rankResult.rows[0]?.rank || 0;
+
+        // Get recent activity
+        const recentActivity = await query(
+            `SELECT 
+               uap.activity_type,
+               uap.points,
+               uap.created_at,
+               CASE 
+                 WHEN uap.activity_type = 'report_submission' THEN r.title
+                 WHEN uap.activity_type = 'forum_post' THEN p.content
+                 ELSE NULL
+               END as activity_details
+             FROM user_activity_points uap
+             LEFT JOIN reports r ON uap.reference_id = r.id AND uap.activity_type = 'report_submission'
+             LEFT JOIN forum_posts p ON uap.reference_id = p.id AND uap.activity_type = 'forum_post'
+             WHERE uap.user_id = $1
+             ORDER BY uap.created_at DESC
+             LIMIT 10`,
+            [userId]
+        );
+
+        res.json({
+            points: {
+                total: totalPoints,
+                rank,
+                breakdown: pointsResult.rows,
+                recentActivity: recentActivity.rows
+            }
         });
     } catch (error) {
         next(error);

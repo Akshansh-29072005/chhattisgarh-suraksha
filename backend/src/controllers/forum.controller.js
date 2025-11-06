@@ -1,187 +1,147 @@
-import ForumService from '../services/forum.service.js';
+import Forum from '../models/forum.js';
 
 export const getAllTopics = async (req, res, next) => {
   try {
-    const filters = {
-      category: req.query.category,
-      sort: req.query.sort,
-      status: req.query.status,
-      search: req.query.search,
-      limit: parseInt(req.query.limit) || 20,
-      offset: parseInt(req.query.offset) || 0
-    };
-
-    console.log(`📋 GET /api/forum/topics - Filters:`, filters);
-
-    const result = await ForumService.getAllTopics(filters);
-
-    res.status(200).json({
+    const topics = await Forum.getAllTopics(req.query);
+    res.json({
       success: true,
-      data: result
+      data: { topics }
     });
   } catch (error) {
-    console.error('❌ Error getting topics:', error);
     next(error);
   }
 };
 
 export const getTopicById = async (req, res, next) => {
   try {
-    const topicId = parseInt(req.params.id);
-
-    console.log(`📖 GET /api/forum/topics/${topicId}`);
-
-    const topic = await ForumService.getTopicById(topicId);
-
-    if (!topic) {
-      return res.status(404).json({
-        success: false,
-        message: 'Topic not found'
-      });
-    }
-
-    res.status(200).json({
+    const topic = await Forum.getTopicById(req.params.id);
+    res.json({
       success: true,
-      data: topic
+      data: { topic }
     });
   } catch (error) {
-    console.error('❌ Error getting topic:', error);
     next(error);
   }
 };
 
 export const createTopic = async (req, res, next) => {
   try {
-    const userId = req.user?.id || 1; // From auth middleware
-    const { title, content, category, tags } = req.body;
-
-    console.log(`✍️ POST /api/forum/topics - User: ${userId}`);
-
-    const topic = await ForumService.createTopic(
-      { title, content, category, tags },
-      userId
-    );
-
+    const newTopic = await Forum.createTopic({
+      ...req.body,
+      authorId: req.user.id
+    });
     res.status(201).json({
       success: true,
-      data: topic,
-      message: 'Topic created successfully'
+      data: { topic: newTopic }
     });
   } catch (error) {
-    console.error('❌ Error creating topic:', error);
-    if (error.message.includes('must be between')) {
-      return res.status(400).json({
-        success: false,
-        message: error.message
-      });
-    }
     next(error);
   }
 };
 
 export const updateTopic = async (req, res, next) => {
   try {
-    const topicId = parseInt(req.params.id);
-    const userId = req.user?.id || 1;
-    const { title, content } = req.body;
-
-    console.log(`✏️ PUT /api/forum/topics/${topicId} - User: ${userId}`);
-
-    const topic = await ForumService.updateTopic(topicId, { title, content }, userId);
-
-    res.status(200).json({
+    const updatedTopic = await Forum.updateTopic(req.params.id, req.body);
+    res.json({
       success: true,
-      data: topic,
-      message: 'Topic updated successfully'
+      data: { topic: updatedTopic }
     });
   } catch (error) {
-    console.error('❌ Error updating topic:', error);
     next(error);
   }
 };
 
 export const deleteTopic = async (req, res, next) => {
   try {
-    const topicId = parseInt(req.params.id);
-    const userId = req.user?.id || 1;
-
-    console.log(`🗑️ DELETE /api/forum/topics/${topicId} - User: ${userId}`);
-
-    await ForumService.deleteTopic(topicId, userId);
-
-    res.status(200).json({
+    await Forum.deleteTopic(req.params.id);
+    res.json({
       success: true,
       message: 'Topic deleted successfully'
     });
   } catch (error) {
-    console.error('❌ Error deleting topic:', error);
-    next(error);
-  }
-};
-
-export const voteTopic = async (req, res, next) => {
-  try {
-    const topicId = parseInt(req.params.id);
-    const userId = req.user?.id || 1;
-    const { voteType } = req.body;
-
-    console.log(`👍 POST /api/forum/topics/${topicId}/vote - User: ${userId}, Type: ${voteType}`);
-
-    const votes = await ForumService.voteTopic(topicId, userId, voteType);
-
-    res.status(200).json({
-      success: true,
-      data: votes
-    });
-  } catch (error) {
-    console.error('❌ Error voting on topic:', error);
     next(error);
   }
 };
 
 export const addReply = async (req, res, next) => {
   try {
-    const topicId = parseInt(req.params.id);
-    const userId = req.user?.id || 1;
-    const { content } = req.body;
-
-    console.log(`💬 POST /api/forum/topics/${topicId}/replies - User: ${userId}`);
-
-    const reply = await ForumService.addReply(topicId, content, userId);
-
+    const reply = await Forum.addReply({
+      topicId: req.params.id,
+      authorId: req.user.id,
+      content: req.body.content
+    });
     res.status(201).json({
       success: true,
-      data: reply,
-      message: 'Reply added successfully'
+      data: { reply }
     });
   } catch (error) {
-    console.error('❌ Error adding reply:', error);
-    if (error.message.includes('must be between')) {
-      return res.status(400).json({
-        success: false,
-        message: error.message
-      });
-    }
     next(error);
   }
 };
 
 export const getReplies = async (req, res, next) => {
   try {
-    const topicId = parseInt(req.params.id);
-    const limit = parseInt(req.query.limit) || 50;
-    const offset = parseInt(req.query.offset) || 0;
-
-    console.log(`💬 GET /api/forum/topics/${topicId}/replies - Limit: ${limit}, Offset: ${offset}`);
-
-    const result = await ForumService.getTopicReplies(topicId, limit, offset);
-
-    res.status(200).json({
+    const replies = await Forum.getReplies(req.params.id);
+    res.json({
       success: true,
-      data: result
+      data: { replies }
     });
   } catch (error) {
-    console.error('❌ Error getting replies:', error);
+    next(error);
+  }
+};
+
+export const voteTopic = async (req, res, next) => {
+  try {
+    const vote = await Forum.recordVote({
+      topicId: req.params.id,
+      userId: req.user.id,
+      voteType: req.body.type
+    });
+    res.json({
+      success: true,
+      data: { vote }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getForumStats = async (req, res, next) => {
+  try {
+    const stats = await Forum.getForumStats();
+    res.json({
+      success: true,
+      data: { stats }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getTopContributors = async (req, res, next) => {
+  try {
+    const contributors = await Forum.getTopContributors();
+    res.json({
+      success: true,
+      data: { contributors }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const updateUserOnlineStatus = async (req, res, next) => {
+  try {
+    const status = await Forum.updateUserOnlineStatus(
+      req.user.id,
+      req.user.full_name
+    );
+    res.json({
+      success: true,
+      data: { status }
+    });
+  } catch (error) {
     next(error);
   }
 };

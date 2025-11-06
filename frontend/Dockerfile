@@ -10,6 +10,9 @@ RUN npm run build
 FROM nginx:alpine
 WORKDIR /usr/share/nginx/html
 
+# Install wget for healthcheck
+RUN apk add --no-cache wget
+
 # Remove default nginx content
 RUN rm -rf /usr/share/nginx/html/*
 

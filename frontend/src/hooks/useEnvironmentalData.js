@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { environmentalAPI } from '../utils/environmental';
+import { auth } from '../utils/api';
 
 const REFRESH_INTERVAL = 30 * 60 * 1000; // 30 minutes
 const MAX_RETRIES = 3;
@@ -38,10 +39,10 @@ export const useEnvironmentalData = () => {
     } catch (err) {
       console.error('Failed to fetch metrics:', err);
 
-      // Handle authentication errors
+      // Handle authentication errors - clear token but don't force navigation here.
       if (err.response?.status === 401 || err.response?.status === 403) {
-        localStorage.removeItem('auth_token');
-        window.location.href = '/login';
+        auth.clearToken();
+        setError('Authentication required. Please log in.');
         return;
       }
 
@@ -80,10 +81,10 @@ export const useEnvironmentalData = () => {
     } catch (err) {
       console.error('Failed to fetch alerts:', err);
 
-      // Handle authentication errors
+      // Handle authentication errors - clear token but don't redirect from a hook
       if (err.response?.status === 401 || err.response?.status === 403) {
-        localStorage.removeItem('auth_token');
-        window.location.href = '/login';
+        auth.clearToken();
+        setError('Authentication required. Please log in.');
         return;
       }
 
@@ -107,11 +108,7 @@ export const useEnvironmentalData = () => {
 
       console.log('[useEnvironmentalData] Starting data fetch...');
       
-      // Check for auth token
-      const token = localStorage.getItem('auth_token');
-      if (!token) {
-        throw new Error('Authentication required. Please log in.');
-      }
+      // Do not read localStorage here; rely on API responses for auth validation.
 
       // Fetch metrics and alerts separately to handle individual failures
       let metricsResponse, alertsResponse;
@@ -127,8 +124,8 @@ export const useEnvironmentalData = () => {
         
         // Handle specific error cases
         if (metricsError.response?.status === 401 || metricsError.response?.status === 403) {
-          localStorage.removeItem('auth_token');
-          window.location.href = '/login';
+          auth.clearToken();
+          setError('Authentication required. Please log in.');
           return;
         }
         
@@ -263,10 +260,10 @@ export const useEnvironmentalData = () => {
     } catch (err) {
       console.error('Error fetching environmental data:', err);
 
-      // Handle auth errors
+      // Handle auth errors - clear token and set an error, leave navigation to components
       if (err.response?.status === 401 || err.response?.status === 403) {
-        localStorage.removeItem('auth_token');
-        window.location.href = '/login';
+        auth.clearToken();
+        setError('Authentication required. Please log in.');
         return;
       }
 

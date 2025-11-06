@@ -1,147 +1,121 @@
 import Forum from '../models/forum.js';
+import ForumValidator from '../models/forum-validator.js';
+import { ForumError } from '../models/forum-errors.js';
 
 class ForumService {
   // Initialize forum tables
-  static async initialize() {
+  static async init() {
     await Forum.createTables();
   }
 
-  // Get all topics with filters
+  // Get all forum topics with optional filters
   static async getAllTopics(filters) {
     try {
-      const result = await Forum.getAllTopics(filters);
-      return result;
+      return await Forum.getAllTopics(filters);
     } catch (error) {
-      console.error('Error getting all topics:', error);
-      throw error;
+      throw new ForumError('Error fetching topics: ' + error.message);
     }
   }
 
   // Get single topic by ID
   static async getTopicById(id) {
     try {
-      // Increment view count
-      await Forum.incrementViewCount(id);
-
       const topic = await Forum.getTopicById(id);
+      if (!topic) {
+        throw new ForumError('Topic not found');
+      }
       return topic;
     } catch (error) {
-      console.error('Error getting topic by ID:', error);
-      throw error;
+      throw new ForumError('Error fetching topic: ' + error.message);
     }
   }
 
-  // Create new topic
-  static async createTopic(topicData, userId) {
+  // Create a new forum topic
+  static async createTopic(userId, data) {
     try {
-      const { title, content, category, tags } = topicData;
-
-      // Validation
-      if (!title || title.length < 10 || title.length > 200) {
-        throw new Error('Title must be between 10 and 200 characters');
-      }
-
-      if (!content || content.length < 50 || content.length > 10000) {
-        throw new Error('Content must be between 50 and 10000 characters');
-      }
-
-      const validCategories = [
-        'air_quality',
-        'water_quality',
-        'green_spaces',
-        'policy',
-        'sustainability',
-        'climate_change',
-        'all'
-      ];
-
-      if (!category || !validCategories.includes(category)) {
-        throw new Error('Invalid category');
-      }
-
-      if (tags && tags.length > 5) {
-        throw new Error('Maximum 5 tags allowed');
-      }
-
-      const topic = await Forum.createTopic({ title, content, category, tags }, userId);
-      return topic;
+      return await Forum.createTopic(data, userId);
     } catch (error) {
-      console.error('Error creating topic:', error);
-      throw error;
+      throw new ForumError('Error creating topic: ' + error.message);
     }
   }
 
-  // Update topic
-  static async updateTopic(id, updates, userId) {
+  // Update existing forum topic
+  static async updateTopic(id, userId, updates) {
     try {
       const topic = await Forum.updateTopic(id, updates, userId);
-
       if (!topic) {
-        throw new Error('Topic not found or unauthorized');
+        throw new ForumError('Topic not found or access denied');
       }
-
       return topic;
     } catch (error) {
-      console.error('Error updating topic:', error);
-      throw error;
+      throw new ForumError('Error updating topic: ' + error.message);
     }
   }
 
-  // Delete topic
+  // Delete forum topic
   static async deleteTopic(id, userId) {
     try {
       const topic = await Forum.deleteTopic(id, userId);
-
       if (!topic) {
-        throw new Error('Topic not found or unauthorized');
+        throw new ForumError('Topic not found or access denied');
       }
-
       return topic;
     } catch (error) {
-      console.error('Error deleting topic:', error);
-      throw error;
+      throw new ForumError('Error deleting topic: ' + error.message);
     }
   }
 
   // Add reply to topic
-  static async addReply(topicId, content, userId) {
+  static async addReply(topicId, userId, content) {
     try {
-      // Validation
-      if (!content || content.length < 10 || content.length > 5000) {
-        throw new Error('Reply content must be between 10 and 5000 characters');
-      }
-
-      const reply = await Forum.addReply(topicId, content, userId);
-      return reply;
+      return await Forum.addReply(topicId, content, userId);
     } catch (error) {
-      console.error('Error adding reply:', error);
-      throw error;
+      throw new ForumError('Error adding reply: ' + error.message);
     }
   }
 
-  // Get replies for a topic
+  // Get all replies for a topic
   static async getTopicReplies(topicId, limit, offset) {
     try {
-      const result = await Forum.getTopicReplies(topicId, limit, offset);
-      return result;
+      return await Forum.getTopicReplies(topicId, limit, offset);
     } catch (error) {
-      console.error('Error getting topic replies:', error);
-      throw error;
+      throw new ForumError('Error fetching replies: ' + error.message);
     }
   }
 
-  // Vote on topic
+  // Vote on a topic
   static async voteTopic(topicId, userId, voteType) {
     try {
-      if (!['up', 'down'].includes(voteType)) {
-        throw new Error('Invalid vote type. Must be "up" or "down"');
-      }
-
-      const votes = await Forum.voteTopic(topicId, userId, voteType);
-      return votes;
+      return await Forum.voteTopic(topicId, userId, voteType);
     } catch (error) {
-      console.error('Error voting on topic:', error);
-      throw error;
+      throw new ForumError('Error voting on topic: ' + error.message);
+    }
+  }
+
+  // Get forum statistics
+  static async getForumStats() {
+    try {
+      return await Forum.getForumStats();
+    } catch (error) {
+      throw new ForumError('Error fetching forum stats: ' + error.message);
+    }
+  }
+
+  // Get top contributors
+  static async getTopContributors(limit) {
+    try {
+      return await Forum.getTopContributors(limit);
+    } catch (error) {
+      throw new ForumError('Error fetching top contributors: ' + error.message);
+    }
+  }
+
+  // Update user's online status
+  static async updateUserOnlineStatus(userId, username) {
+    try {
+      await Forum.updateUserOnlineStatus(userId, username);
+    } catch (error) {
+      throw new ForumError('Error updating online status: ' + error.message);
     }
   }
 }

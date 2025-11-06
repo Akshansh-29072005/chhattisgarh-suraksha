@@ -1,48 +1,94 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Icon from '../AppIcon';
 import Button from './Button';
+import { metricsAPI } from '../../utils/api';
+import { toast } from 'sonner';
 
 const AlertNotificationBar = () => {
   const [alerts, setAlerts] = useState([]);
   const [isVisible, setIsVisible] = useState(false);
   const [currentAlertIndex, setCurrentAlertIndex] = useState(0);
+  const [isLoading, setIsLoading] = useState(true);
+  const wsRef = useRef(null);
 
-  // Mock alerts data - in real app, this would come from WebSocket or API
-  const mockAlerts = [
-    {
-      id: 1,
-      type: 'warning',
-      title: 'Air Quality Alert',
-      message: 'Moderate air pollution detected in Downtown area. Sensitive individuals should limit outdoor activities.',
-      timestamp: new Date(),
-      location: 'Downtown District',
-      severity: 'moderate'
-    },
-    {
-      id: 2,
-      type: 'error',
-      title: 'Water Quality Emergency',
-      message: 'High contamination levels detected in River Park water supply. Avoid contact with water.',
-      timestamp: new Date(Date.now() - 300000), // 5 minutes ago
-      location: 'River Park',
-      severity: 'high'
-    },
-    {
-      id: 3,
-      type: 'success',
-      title: 'Air Quality Improved',
-      message: 'Air quality has returned to good levels in the Industrial Zone.',
-      timestamp: new Date(Date.now() - 600000), // 10 minutes ago
-      location: 'Industrial Zone',
-      severity: 'low'
+  const fetchAlerts = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      const response = await metricsAPI.getActiveAlerts();
+      if (response?.data) {
+        setAlerts(response.data);
+        setIsVisible(response.data.length > 0);
+      }
+    } catch (error) {
+      console.error('Failed to fetch alerts:', error);
+      toast.error('Unable to load alerts. Will retry soon.');
+    } finally {
+      setIsLoading(false);
     }
-  ];
+  }, []);
+
+  const setupWebSocket = useCallback(() => {
+    if (wsRef.current) return; // Already connected
+
+    try {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = `${protocol}//${window.location.host}/api/ws/alerts`;
+      
+      const ws = new WebSocket(wsUrl);
+      wsRef.current = ws;
+
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === 'alert') {
+            setAlerts(prev => {
+              const newAlerts = [...prev];
+              const existingIndex = newAlerts.findIndex(a => a.id === data.alert.id);
+              
+              if (existingIndex >= 0) {
+                newAlerts[existingIndex] = data.alert;
+              } else {
+                newAlerts.unshift(data.alert);
+                toast.message(data.alert.title, {
+                  description: data.alert.message
+                });
+              }
+              
+              return newAlerts;
+            });
+            setIsVisible(true);
+          }
+        } catch (err) {
+          console.error('Failed to parse WebSocket message:', err);
+        }
+      };
+
+      ws.onclose = () => {
+        wsRef.current = null;
+        // Attempt to reconnect after a delay
+        setTimeout(setupWebSocket, 5000);
+      };
+
+    } catch (error) {
+      console.error('WebSocket connection failed:', error);
+      wsRef.current = null;
+    }
+  }, []);
 
   useEffect(() => {
-    // Simulate receiving alerts
-    setAlerts(mockAlerts);
-    setIsVisible(mockAlerts?.length > 0);
-  }, []);
+    fetchAlerts(); // Initial fetch
+    setupWebSocket(); // Set up real-time updates
+
+    const pollInterval = setInterval(fetchAlerts, 30000); // Fallback polling every 30s
+
+    return () => {
+      clearInterval(pollInterval);
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
+      }
+    };
+  }, [fetchAlerts, setupWebSocket]);
 
   useEffect(() => {
     if (alerts?.length > 1) {
@@ -95,6 +141,17 @@ const AlertNotificationBar = () => {
     if (hours < 24) return `${hours}h ago`;
     return `${Math.floor(hours / 24)}d ago`;
   };
+
+  if (isLoading) {
+    return (
+      <div className="fixed top-16 left-0 right-0 z-[999] border-b transition-all duration-300 bg-background/80 backdrop-blur-sm">
+        <div className="flex items-center justify-center px-4 py-2">
+          <Icon name="Loader2" size={16} className="animate-spin mr-2" />
+          <span className="text-sm">Loading alerts...</span>
+        </div>
+      </div>
+    );
+  }
 
   if (!isVisible || alerts?.length === 0) {
     return null;

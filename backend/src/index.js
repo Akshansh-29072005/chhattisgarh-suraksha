@@ -42,9 +42,11 @@ async function runGamificationMigration() {
   }
 }
 import reportsRoutes from './routes/reports.routes.js';
-import * as blockchain from './services/blockchain.service.js';
+// Defer importing blockchain service (it may require optional native deps like ethers)
+let blockchain;
 import ForumService from './services/forum.service.js';
 import UserActivityService from './services/user-activity.service.js';
+import './services/cron.service.js';
 
 // Import routes
 import authRoutes from './routes/auth.routes.js';
@@ -55,6 +57,9 @@ import mlRoutes from './routes/ml.routes.js';
 import forumRoutes from './routes/forum.routes.js';
 import analyticsRoutes from './routes/analytics.routes.js';
 import userActivityRoutes from './routes/user-activity.routes.js';
+import mapRoutes from './routes/map.routes.js';
+import communityRoutes from './routes/community.routes.js';
+import { gamificationRoutes } from './routes/gamification.routes.js';
 
 // Load environment variables
 dotenv.config();
@@ -192,9 +197,12 @@ app.use('/api/users', userActivityRoutes); // User activity routes (stats, activ
 app.use('/api/users', userRoutes); // User profile routes
 app.use('/api/metrics', metricsRoutes);
 app.use('/api/reports', reportsRoutes);
+app.use('/api/community', communityRoutes);
 app.use('/api/ml', mlRoutes);
 app.use('/api/forum', forumRoutes);
 app.use('/api/analytics', analyticsRoutes);
+app.use('/api/map', mapRoutes); // Interactive map routes
+app.use('/api/gamification', gamificationRoutes); // Gamification and achievements routes
 
 // Catch-all route for debugging
 app.use((req, res) => {
@@ -246,14 +254,15 @@ dbConnect().then(async () => {
     const address = server.address();
     console.log(`🚀 Server is running on ${typeof address === 'string' ? address : `${address.address}:${address.port}`}`);
     
-    // Then try to initialize blockchain
+    // Then try to initialize blockchain (lazy import so missing optional deps don't crash startup)
     try {
       console.log('Initializing blockchain...');
+      blockchain = await import('./services/blockchain.service.js');
       const contractAddress = await blockchain.initBlockchain();
       console.log('✅ Blockchain contract deployed at:', contractAddress);
     } catch (err) {
-      console.error('⚠️ Blockchain initialization failed:', err.message);
-      console.log('👉 Make sure Hardhat node is running with: npx hardhat node');
+      console.error('⚠️ Blockchain initialization failed or optional deps missing:', err.message);
+      console.log('👉 Blockchain features disabled for now. To enable, install optional deps and run a local node.');
       // Don't exit - let the server run without blockchain for development
     }
   });

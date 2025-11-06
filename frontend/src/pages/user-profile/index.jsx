@@ -9,6 +9,7 @@ import LocationSelector from '../../components/ui/LocationSelector';
 import UserStatusIndicator from '../../components/ui/UserStatusIndicator';
 import DataLayerToggle from '../../components/ui/DataLayerToggle';
 import { userAPI } from '../../utils/api';
+import { useAuth } from '../../contexts/AuthContext';
 
 // Import components
 import ProfileHeader from './components/ProfileHeader';
@@ -20,6 +21,7 @@ import NotificationSettings from './components/NotificationSettings';
 
 function UserProfile() {
   const navigate = useNavigate();
+  const { logout, user, loading } = useAuth();
   const [activeTab, setActiveTab] = useState('profile');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -45,33 +47,30 @@ function UserProfile() {
   React.useEffect(() => {
     const fetchUserData = async () => {
       try {
-        console.log('Fetching user profile data...');
-        const token = localStorage.getItem('auth_token');
-        console.log('Auth token:', token);
-        
-        if (!token) {
-          console.log('No auth token found, redirecting to login');
+        // If auth context is still loading, wait
+        if (loading) return;
+
+        // If no authenticated user, redirect to login
+        if (!user) {
           navigate('/login');
           return;
         }
 
-        const response = await userAPI.getProfile();
-        console.log('Profile response:', response);
-        if (response.data) {
-          setUserData(response.data);
+        // Try to fetch latest profile from server to populate detailed fields
+        const profile = await userAPI.getProfile();
+        // userAPI returns data (already unwrapped in utils/api), but be defensive
+        const profileData = profile?.data || profile || null;
+        if (profileData) {
+          setUserData(profileData);
         }
       } catch (error) {
         console.error('Failed to fetch user data:', error);
-        console.error('Error details:', {
-          message: error.message,
-          response: error.response?.data,
-          status: error.response?.status
-        });
         if (error.response?.status === 401) {
+          // Delegate logout handling to AuthContext
           alert('Your session has expired. Please log in again.');
-          navigate('/login');
+          logout();
         } else {
-          alert('Failed to load user profile. Please try again.');
+          console.error('Failed to load user profile:', error.message || error);
         }
       } finally {
         setIsLoading(false);
@@ -79,7 +78,7 @@ function UserProfile() {
     };
 
     fetchUserData();
-  }, [navigate]);
+  }, [navigate, user, loading, logout]);
 
   // Mock environmental preferences
   const [environmentalPreferences, setEnvironmentalPreferences] = useState({
@@ -273,8 +272,8 @@ function UserProfile() {
                 <div className="px-2 pt-2 pb-2 border-t border-border">
                   <button
                     onClick={() => {
-                      localStorage.removeItem('auth_token');
-                      navigate('/login');
+                      // Use AuthContext logout to clear token and redirect
+                      logout();
                     }}
                     className="group flex items-center px-2 py-2 text-sm font-medium rounded-md w-full transition-colors duration-200 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20"
                   >
@@ -335,10 +334,7 @@ function UserProfile() {
 
                   {/* Mobile Logout Button */}
                   <button
-                    onClick={() => {
-                      localStorage.removeItem('auth_token');
-                      navigate('/login');
-                    }}
+                    onClick={() => logout()}
                     className="group flex items-center px-2 py-2 mt-4 text-sm font-medium rounded-md w-full transition-colors duration-200 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 border-t border-border"
                   >
                     <Icon

@@ -1,5 +1,5 @@
-import React, { createContext, useState, useContext, useEffect } from 'react';
-import { userAPI } from '../utils/api';
+import React, { createContext, useState, useContext, useEffect, useCallback } from 'react';
+import { userAPI, auth, authAPI } from '../utils/api';
 import { toast } from 'sonner';
 
 const AuthContext = createContext();
@@ -8,21 +8,23 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    loadUserProfile();
-  }, []);
+  const loadUserProfile = useCallback(async () => {
+    const token = auth.getToken();
 
-  const loadUserProfile = async () => {
-    const token = localStorage.getItem('auth_token');
     if (!token) {
+      setUser(null);
       setLoading(false);
       return;
     }
 
     try {
+      // First verify the token
+      await authAPI.verifyToken();
+      
+      // Then get the user profile
       const response = await userAPI.getProfile();
-      // userAPI.getProfile returns response.data; some endpoints return { data } envelope
       const profile = response?.data || response;
+      
       if (profile) {
         setUser({
           id: profile.id || profile.userId || null,
@@ -40,21 +42,28 @@ export const AuthProvider = ({ children }) => {
       }
     } catch (error) {
       console.error('Failed to load user profile:', error);
-      if (error.response?.status === 401) {
-        handleLogout();
+      // If token verification fails or profile fetch fails, clear auth state
+      if (error.response?.status === 401 || error.message === 'Token verification failed') {
+        handleLogout(false); // Don't redirect on initial load
       }
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  const handleLogout = async () => {
+  useEffect(() => {
+    loadUserProfile();
+  }, [loadUserProfile]);
+
+  const handleLogout = async (redirect = true) => {
     try {
-      localStorage.removeItem('auth_token');
-      localStorage.removeItem('user_id');
+      // Centralize token removal in the API token manager
+      auth.clearToken();
       setUser(null);
-      toast.success('Successfully logged out');
-      window.location.href = '/login';
+      if (redirect) {
+        toast.success('Successfully logged out');
+        window.location.href = '/login';
+      }
     } catch (error) {
       console.error('Logout error:', error);
       toast.error('Failed to logout properly');
@@ -68,7 +77,8 @@ export const AuthProvider = ({ children }) => {
         setUser, 
         loading,
         logout: handleLogout,
-        refreshProfile: loadUserProfile 
+        refreshProfile: loadUserProfile,
+        isAuthenticated: !!user
       }}
     >
       {children}

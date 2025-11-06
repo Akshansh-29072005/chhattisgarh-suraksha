@@ -27,14 +27,7 @@ class MLService {
       const currentMetrics = await EnvironmentalMetrics.getLatestMetrics(locationId);
 
       // Fetch historical data for pattern analysis (past 7 days)
-      const endDate = new Date();
-      const startDate = new Date();
-      startDate.setDate(startDate.getDate() - 7);
-      const historicalData = await EnvironmentalMetrics.getHistoricalMetrics(
-        locationId,
-        startDate.toISOString(),
-        endDate.toISOString()
-      );
+      const historicalData = await EnvironmentalMetrics.getHistoricalMetrics(locationId, 7);
 
       // Calculate average PM2.5 from historical data
       const avgPM25 = historicalData.length > 0
@@ -116,15 +109,7 @@ class MLService {
   static async forecastAirQuality(locationId = 1) {
     try {
       // Fetch historical PM2.5 data (past 48 hours for trend analysis)
-      const endDate = new Date();
-      const startDate = new Date();
-      startDate.setHours(startDate.getHours() - 48);
-
-      const historicalData = await EnvironmentalMetrics.getHistoricalMetrics(
-        locationId,
-        startDate.toISOString(),
-        endDate.toISOString()
-      );
+      const historicalData = await EnvironmentalMetrics.getHistoricalMetrics(locationId, 2);
 
       // Calculate current trend
       let currentPM25 = 45; // default
@@ -280,15 +265,7 @@ class MLService {
   static async recognizePatterns(locationId = 1, days = 30) {
     try {
       // Fetch historical data for pattern analysis
-      const endDate = new Date();
-      const startDate = new Date();
-      startDate.setDate(startDate.getDate() - days);
-
-      const historicalData = await EnvironmentalMetrics.getHistoricalMetrics(
-        locationId,
-        startDate.toISOString(),
-        endDate.toISOString()
-      );
+      const historicalData = await EnvironmentalMetrics.getHistoricalMetrics(locationId, days);
 
       if (historicalData.length < 7) {
         return [{

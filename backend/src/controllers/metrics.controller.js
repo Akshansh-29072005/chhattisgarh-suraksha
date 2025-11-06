@@ -1,5 +1,6 @@
 import EnvironmentalDataService from '../services/environmental-data.service.js';
 import EnvironmentalMetrics from '../models/environmental-metrics.js';
+import { query } from '../config/database.js';
 
 export const getCurrentMetrics = async (req, res, next) => {
   try {
@@ -85,7 +86,7 @@ export const getActiveAlerts = async (req, res, next) => {
 
 export const getMetricsHistory = async (req, res, next) => {
   try {
-    const { type, duration, _mock } = req.query;
+    const { type, duration = '24', _mock } = req.query;
 
     // Check if mock data is requested
     if (_mock === 'true') {
@@ -101,12 +102,74 @@ export const getMetricsHistory = async (req, res, next) => {
       });
     }
 
-    const data = await EnvironmentalMetrics.getMetricsHistory(type, parseInt(duration));
+    // Get historical data - support weather, air_quality and combined 'all'
+    const durationHours = parseInt(duration);
 
-    res.status(200).json({
-      success: true,
-      data
-    });
+    if (type === 'weather') {
+      // For weather metrics
+      const result = await query(`
+        SELECT
+          wm.timestamp as timestamp,
+          wm.temperature,
+          wm.humidity,
+          wm.wind_speed,
+          wm.wind_direction
+        FROM weather_metrics wm
+        WHERE wm.timestamp > NOW() - INTERVAL '${durationHours} hours'
+        ORDER BY wm.timestamp ASC
+      `);
+
+      return res.status(200).json({ success: true, data: result.rows });
+    }
+
+    if (type === 'all') {
+      // Aggregate metrics by hour to align air quality and weather measurements
+      const result = await query(`
+        SELECT
+          DATE_TRUNC('hour', COALESCE(a.timestamp, w.timestamp)) AT TIME ZONE 'UTC' AS timestamp,
+          AVG(a.aqi)      FILTER (WHERE a.aqi IS NOT NULL)     AS aqi,
+          AVG(a.pm25)     FILTER (WHERE a.pm25 IS NOT NULL)    AS pm25,
+          AVG(a.pm10)     FILTER (WHERE a.pm10 IS NOT NULL)    AS pm10,
+          AVG(w.temperature) FILTER (WHERE w.temperature IS NOT NULL) AS temperature,
+          AVG(w.humidity)    FILTER (WHERE w.humidity IS NOT NULL)    AS humidity
+        FROM air_quality_metrics a
+        FULL OUTER JOIN weather_metrics w
+          ON DATE_TRUNC('hour', a.timestamp) = DATE_TRUNC('hour', w.timestamp)
+        WHERE COALESCE(a.timestamp, w.timestamp) > NOW() - INTERVAL '${durationHours} hours'
+        GROUP BY DATE_TRUNC('hour', COALESCE(a.timestamp, w.timestamp))
+        ORDER BY timestamp ASC
+      `);
+
+      // Normalize returned rows: timestamp should be ISO string and numeric fields as numbers
+      const normalized = result.rows.map(r => ({
+        timestamp: r.timestamp ? new Date(r.timestamp).toISOString() : null,
+        aqi: r.aqi != null ? Math.round(Number(r.aqi)) : null,
+        pm25: r.pm25 != null ? Number(r.pm25) : null,
+        pm10: r.pm10 != null ? Number(r.pm10) : null,
+        temperature: r.temperature != null ? Number(r.temperature) : null,
+        humidity: r.humidity != null ? Number(r.humidity) : null
+      }));
+
+      return res.status(200).json({ success: true, data: normalized });
+    }
+
+    // Default: air quality metrics
+    const result = await query(`
+      SELECT
+        timestamp as timestamp,
+        aqi,
+        pm25,
+        pm10,
+        no2,
+        so2,
+        o3,
+        co
+      FROM air_quality_metrics
+      WHERE timestamp > NOW() - INTERVAL '${durationHours} hours'
+      ORDER BY timestamp ASC
+    `);
+
+    return res.status(200).json({ success: true, data: result.rows });
   } catch (error) {
     next(error);
   }

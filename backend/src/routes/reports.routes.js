@@ -1,11 +1,13 @@
 import express from 'express';
-import { submitReport, getAllReports } from '../controllers/reports.controller.js';
-import { authenticateToken } from '../middleware/auth.middleware.js';
+import { submitReport, getAllReports, getPollutionSources, getWeeklyReports } from '../controllers/reports.controller.js';
+import { authMiddleware } from '../middleware/auth.middleware.js';
 
 const router = express.Router();
 
 // Require authentication for submitting reports so we can credit user activity and points
-router.post('/submit', authenticateToken, submitReport);
+router.post('/submit', authMiddleware, submitReport);
 router.get('/all', getAllReports);
+router.get('/summary/pollution-sources', getPollutionSources);
+router.get('/summary/weekly-reports', getWeeklyReports);
 
 export default router;

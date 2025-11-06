@@ -46,6 +46,12 @@ const LocationCapture = ({ location, onLocationChange }) => {
       return;
     }
 
+    // Check for internet connectivity
+    if (!navigator.onLine) {
+      alert('Please check your internet connection. Location detection requires internet access.');
+      return;
+    }
+
     setIsDetecting(true);
     setSuggestions([]);
     setLocationError(null);
@@ -61,9 +67,19 @@ const LocationCapture = ({ location, onLocationChange }) => {
     };
 
     try {
-      const position = await new Promise((resolve, reject) => {
+      // Show user that we're accessing their location
+      const positionPromise = new Promise((resolve, reject) => {
         navigator.geolocation.getCurrentPosition(resolve, reject, options);
       });
+      
+      // Add a user-friendly timeout message
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => {
+          reject(new Error('Location detection is taking longer than usual. Please ensure your GPS is enabled.'));
+        }, options.timeout);
+      });
+      
+      const position = await Promise.race([positionPromise, timeoutPromise]);
 
       const { latitude, longitude, accuracy } = position.coords;
       console.log('Location detected:', { latitude, longitude, accuracy });
@@ -84,11 +100,16 @@ const LocationCapture = ({ location, onLocationChange }) => {
         const data = await response.json();
         console.log('Geocoding response:', data);
 
-        // Verify location is in Chhattisgarh
+        // Verify location is in Chhattisgarh using stricter bounds
+        const lat = parseFloat(data.lat);
+        const lon = parseFloat(data.lon);
         const isInRegion = data.address && 
           (data.address.state === 'Chhattisgarh' || 
            data.address.city === 'Raipur' ||
-           data.display_name.includes('Chhattisgarh'));
+           data.display_name.includes('Chhattisgarh')) &&
+          // Check if coordinates are within Chhattisgarh bounds
+          lat >= 17.46 && lat <= 24.45 && 
+          lon >= 80.15 && lon <= 84.39;
 
         if (!isInRegion) {
           console.warn('Location outside Chhattisgarh:', data.display_name);
@@ -157,9 +178,11 @@ const LocationCapture = ({ location, onLocationChange }) => {
     acTimeout.current = setTimeout(async () => {
       setLoadingSuggestions(true);
       try {
-        // Focus search on Chhattisgarh region
-        const q = encodeURIComponent(address.trim() + ', Chhattisgarh');
-        const url = `https://nominatim.openstreetmap.org/search?q=${q}&format=json&addressdetails=1&limit=3&countrycodes=in`;
+        // Focus search on Chhattisgarh region with more precise bounding box
+        const q = encodeURIComponent(address.trim());
+        // Chhattisgarh bounding box coordinates
+        const bbox = '80.15,17.46,84.39,24.45'; // [min_lon,min_lat,max_lon,max_lat]
+        const url = `https://nominatim.openstreetmap.org/search?q=${q}&format=json&addressdetails=1&limit=5&countrycodes=in&bounded=1&viewbox=${bbox}&bounded=1`;
         
         const res = await fetch(url, {
           headers: {
@@ -336,13 +359,20 @@ const LocationCapture = ({ location, onLocationChange }) => {
                 key={idx}
                 type="button"
                 onClick={() => handleSelectSuggestion(suggestion)}
-                className="w-full text-left px-3 py-2 hover:bg-muted rounded-md text-sm"
+                className="w-full text-left px-3 py-2 hover:bg-muted rounded-md text-sm flex items-start space-x-2"
               >
-                <div className="font-medium text-foreground">
-                  {suggestion.display_name}
+                <div className="flex-shrink-0 mt-1">
+                  <Icon name="MapPin" size={14} className="text-primary" />
                 </div>
-                <div className="text-xs text-muted-foreground">
-                  {suggestion.type} • {suggestion.latitude.toFixed(4)}, {suggestion.longitude.toFixed(4)}
+                <div className="flex-1">
+                  <div className="font-medium text-foreground line-clamp-2">
+                    {suggestion.display_name}
+                  </div>
+                  <div className="text-xs text-muted-foreground mt-0.5 flex items-center space-x-1">
+                    <span className="capitalize">{suggestion.type}</span>
+                    <span>•</span>
+                    <span>{suggestion.latitude.toFixed(4)}, {suggestion.longitude.toFixed(4)}</span>
+                  </div>
                 </div>
               </button>
             ))}

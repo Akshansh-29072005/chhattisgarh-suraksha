@@ -14,11 +14,10 @@ const api = axios.create({
 const AUTH_TOKEN_KEY = 'auth_token';
 const USER_ID_KEY = 'user_id';
 
-// List of endpoints that should not trigger auth redirect
+// List of endpoints that should not trigger auth handling logic
 const AUTH_ENDPOINTS = [
   '/auth/send-otp',
   '/auth/verify-otp',
-  '/auth/verify',
   '/auth/register'
 ];
 
@@ -52,20 +51,7 @@ if (storedToken) {
   tokenManager.setToken(storedToken);
 }
 
-// Add request interceptor to include auth token and handle errors
-api.interceptors.request.use(
-  (config) => {
-    console.log('Request to:', config.url);
-    // Token will already be in headers from setupAuthToken
-    return config;
-  },
-  (error) => {
-    console.error('Request Interceptor Error:', error);
-    return Promise.reject(error);
-  }
-);
-
-// Add request interceptor
+// Add request interceptor to add auth token to requests
 api.interceptors.request.use(
   (config) => {
     // Add auth token to requests if available
@@ -75,59 +61,10 @@ api.interceptors.request.use(
     }
     return config;
   },
-  (error) => {
-    return Promise.reject(error);
-  }
+  (error) => Promise.reject(error)
 );
 
-// Add response interceptor
-api.interceptors.response.use(
-  (response) => response,
-  (error) => {
-    // Handle network errors
-    if (!error.response) {
-      return Promise.reject({
-        message: error.message || 'Network error occurred'
-      });
-    }
-
-    // Handle authentication errors
-    const isAuthEndpoint = AUTH_ENDPOINTS.some(endpoint => 
-      error.config?.url?.includes(endpoint)
-    );
-    
-    const isAuthError = error.response?.status === 401 || error.response?.status === 403;
-    
-    if (isAuthError) {
-      console.log('[Auth Status]:', {
-        isAuthEndpoint,
-        token: localStorage.getItem('auth_token'),
-        currentPath: window.location.pathname
-      });
-    }
-    
-    // Only handle auth errors for non-auth endpoints
-    if (isAuthError && !isAuthEndpoint) {
-      console.log('[Auth Error]: Handling unauthorized access');
-      localStorage.removeItem('auth_token');
-      localStorage.removeItem('user_id');
-      delete api.defaults.headers.common['Authorization'];
-      
-      // Only redirect if we're not already on the login page and it's a frontend route
-      if (!window.location.pathname.includes('/login')) {
-        console.log('[Auth Redirect]: Redirecting to login page');
-        window.location.replace('/login');
-      }
-    }
-    
-    return Promise.reject({
-      ...error,
-      message: error.response?.data?.message || error.message || 'An unexpected error occurred'
-    });
-  }
-);
-
-// Add a single response interceptor to handle all types of errors
+// Response interceptor: central logging, network handling and auth handling
 api.interceptors.response.use(
   (response) => {
     console.log('[API Response]:', {
@@ -171,21 +108,15 @@ api.interceptors.response.use(
       console.log('[Auth Status]:', {
         isAuthEndpoint,
         url: error.config?.url,
-        token: localStorage.getItem('auth_token'),
+        token: tokenManager.getToken(),
         currentPath: window.location.pathname
       });
 
-      // Only handle auth errors for non-auth endpoints and non-verify endpoints
-      if (!isAuthEndpoint && !error.config?.url?.includes('/api/auth/verify')) {
+      // Only clear token automatically for non-auth endpoints. Do NOT perform a hard redirect
+      // here; let the app (AuthContext/components) decide navigation to avoid loops.
+      if (!isAuthEndpoint) {
         console.log('[Auth Error]: Handling unauthorized access');
         tokenManager.clearToken(); // Clear auth state
-        
-        // Only redirect if we're not already on the login page or in the auth flow
-        if (!window.location.pathname.includes('/login') && 
-            !window.location.pathname.includes('/signup')) {
-          console.log('[Auth Redirect]: Redirecting to login page');
-          window.location.replace('/login');
-        }
       }
     }
 
@@ -196,6 +127,9 @@ api.interceptors.response.use(
     });
   }
 );
+
+// (Note) Only one response interceptor is registered above. Duplicate handlers were removed to
+// avoid multiple token clears or duplicate side effects.
 
 // Auth related API calls
 export const authAPI = {
@@ -254,11 +188,22 @@ export const authAPI = {
         throw new Error('No auth token found');
       }
 
-      const response = await api.get('/auth/verify');
+      // The backend does not expose /auth/verify in current API surface.
+      // Use the protected `/users/profile` endpoint to validate the token instead.
+      const response = await api.get('/users/profile');
+      // If this succeeds (200), the token is valid and we return the profile data.
       return response.data;
     } catch (error) {
-      tokenManager.clearToken();
-      throw new Error('Token verification failed');
+      // Only clear token automatically on explicit auth errors (401/403).
+      const status = error.response?.status;
+      if (status === 401 || status === 403) {
+        tokenManager.clearToken();
+        throw new Error('Token verification failed');
+      }
+
+      // For other errors (404, network issues), do not clear token here.
+      // Let the caller decide how to handle these cases.
+      throw error;
     }
   },
 

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate, Link, useLocation } from 'react-router-dom';
-import { authAPI } from '../../utils/api';
+import { authAPI, auth } from '../../utils/api';
+import { useAuth } from '../../contexts/AuthContext';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 import Icon from '../../components/AppIcon';
@@ -22,6 +23,7 @@ const SignUp = () => {
   });
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  const { refreshProfile } = useAuth();
 
   const handlePhoneSubmit = async (e) => {
     e.preventDefault();
@@ -49,19 +51,24 @@ const SignUp = () => {
       const data = await authAPI.verifyOTP(formData.phoneNumber, formData.otp);
       console.log('OTP verification response:', data);
       
-      if (data.isNewUser || !data.isProfileComplete) {
-        // Save the token and proceed to profile completion
-        localStorage.setItem('auth_token', data.token);
+      // Use the API token manager to set token and headers
+      if (data.token) {
+        auth.setToken(data.token);
         if (data.userId) {
           localStorage.setItem('user_id', data.userId);
         }
+
+        // Refresh profile in context so UI knows user is logged in
+        if (typeof refreshProfile === 'function') {
+          await refreshProfile();
+        }
+      }
+
+      if (data.isNewUser || !data.isProfileComplete) {
+        // Proceed to profile completion
         setStep(3);
       } else {
         // User exists and profile is complete, redirect to dashboard
-        localStorage.setItem('auth_token', data.token);
-        if (data.userId) {
-          localStorage.setItem('user_id', data.userId);
-        }
         navigate('/environmental-dashboard', { replace: true });
       }
     } catch (err) {
@@ -87,12 +94,17 @@ const SignUp = () => {
       console.log('Registration successful:', data);
       
       if (data.token) {
-        // Update auth token with the new one from registration
-        localStorage.setItem('auth_token', data.token);
+        // Use API token manager to set token and headers
+        auth.setToken(data.token);
         if (data.userId) {
           localStorage.setItem('user_id', data.userId);
         }
-        
+
+        // Refresh profile in context so UI knows user is logged in
+        if (typeof refreshProfile === 'function') {
+          await refreshProfile();
+        }
+
         // Redirect to environmental dashboard
         navigate('/environmental-dashboard', { replace: true });
       } else {
