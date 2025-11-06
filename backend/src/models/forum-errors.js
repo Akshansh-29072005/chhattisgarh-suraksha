@@ -39,3 +39,5 @@ export class DatabaseError extends ForumError {
 }
 
 export default ForumError;
+// Also expose named export for modules that import `{ ForumError }`.
+export { ForumError };
