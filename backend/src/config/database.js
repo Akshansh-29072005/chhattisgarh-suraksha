@@ -149,3 +149,6 @@ export const dbConnect = async () => {
 export const query = (text, params) => pool.query(text, params);
 
 export default pool;
+
+// Also provide a named export for legacy imports that expect `{ pool }`.
+export { pool };
