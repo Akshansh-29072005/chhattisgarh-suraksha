@@ -157,15 +157,15 @@ app.use(cors(corsOptions));
 
 // Body parsing middleware with error handling
 app.use(express.json({
-  verify: (req, res, buf) => {
+  verify: (req, _res, buf) => {
     try {
       JSON.parse(buf);
     } catch (e) {
-      res.status(400).json({ 
-        message: 'Invalid JSON in request body',
-        error: e.message 
-      });
-      throw new Error('Invalid JSON');
+      // Throw an error with status so the centralized error handler can produce a single response.
+      const err = new Error('Invalid JSON in request body');
+      err.status = 400;
+      err.originalError = e.message;
+      throw err;
     }
   }
 }));
@@ -234,6 +234,8 @@ app.use(errorHandler);
 const PORT = process.env.PORT || 5000;
 
 import http from 'http';
+import { WebSocketServer } from 'ws';
+import jwt from 'jsonwebtoken';
 
 dbConnect().then(async () => {
   console.log('✅ Database connected');
@@ -249,10 +251,62 @@ dbConnect().then(async () => {
 
   const server = http.createServer(app);
   
+  // Create WebSocket server attached to the HTTP server
+  const wss = new WebSocketServer({ server, path: '/api/ws' });
+
+  // Store connected clients
+  const clients = new Map();
+
+  // WebSocket connection handler
+  wss.on('connection', async (ws, req) => {
+    console.log('👥 New WebSocket connection');
+
+    // Extract token from query string
+    const url = new URL(req.url, 'http://localhost');
+    const token = url.searchParams.get('token');
+
+    // Verify token and get user ID
+    let userId;
+    try {
+      if (token) {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
+        userId = decoded.id;
+        console.log('🔑 Authenticated WebSocket connection for user:', userId);
+        clients.set(userId, ws);
+      }
+    } catch (err) {
+      console.warn('⚠️ Invalid token in WebSocket connection:', err.message);
+      ws.close(4001, 'Unauthorized');
+      return;
+    }
+
+    // Handle messages
+    ws.on('message', (message) => {
+      try {
+        const data = JSON.parse(message);
+        console.log('📩 Received message:', data);
+      } catch (err) {
+        console.error('❌ Error handling message:', err);
+      }
+    });
+
+    // Handle client disconnection
+    ws.on('close', () => {
+      console.log('🚪 Client disconnected');
+      if (userId) {
+        clients.delete(userId);
+      }
+    });
+
+    // Send initial connection success message
+    ws.send(JSON.stringify({ type: 'connected', message: 'WebSocket connection established' }));
+  });
+
   // Start server first
   server.listen(PORT, '0.0.0.0', async () => {
     const address = server.address();
     console.log(`🚀 Server is running on ${typeof address === 'string' ? address : `${address.address}:${address.port}`}`);
+    console.log('🔌 WebSocket server is listening on /api/ws');
     
     // Then try to initialize blockchain (lazy import so missing optional deps don't crash startup)
     try {

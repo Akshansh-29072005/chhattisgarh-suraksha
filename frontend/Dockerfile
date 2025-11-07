@@ -20,8 +20,9 @@ RUN rm -rf /usr/share/nginx/html/*
 # Use /app/build instead of /app/dist so the COPY matches the actual build output.
 COPY --from=build /app/build .
 
-# Copy nginx config
+# Copy nginx configs
 COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY websocket.conf /etc/nginx/conf.d/websocket.conf
 
 EXPOSE 80
 

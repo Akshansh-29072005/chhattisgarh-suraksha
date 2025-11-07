@@ -1,112 +1,175 @@
 import Forum from '../models/forum.js';
-import ForumValidator from '../models/forum-validator.js';
-import { ForumError } from '../models/forum-errors.js';
+import { ValidationError } from '../models/forum-errors.js';
 
 class ForumService {
   // Initialize forum tables
-  static async init() {
+  static async initialize() {
     await Forum.createTables();
   }
 
-  // Get all forum topics with optional filters
+  // Get all topics with filters
   static async getAllTopics(filters) {
     try {
-      return await Forum.getAllTopics(filters);
+      const result = await Forum.getAllTopics(filters);
+      return result;
     } catch (error) {
-      throw new ForumError('Error fetching topics: ' + error.message);
+      console.error('Error getting all topics:', error);
+      throw error;
     }
   }
 
   // Get single topic by ID
   static async getTopicById(id) {
     try {
+      // Increment view count
+      await Forum.incrementViewCount(id);
+
       const topic = await Forum.getTopicById(id);
-      if (!topic) {
-        throw new ForumError('Topic not found');
-      }
       return topic;
     } catch (error) {
-      throw new ForumError('Error fetching topic: ' + error.message);
+      console.error('Error getting topic by ID:', error);
+      throw error;
     }
   }
 
-  // Create a new forum topic
-  static async createTopic(userId, data) {
+  // Create new topic
+  static async createTopic(topicData, userId) {
     try {
-      return await Forum.createTopic(data, userId);
+      const { title, content, category, tags } = topicData;
+      // Validation
+      const errors = [];
+      if (!title || title.length < 10 || title.length > 200) {
+        errors.push({ field: 'title', message: 'Title must be between 10 and 200 characters' });
+      }
+
+      if (!content || content.length < 10 || content.length > 10000) {
+        errors.push({ field: 'content', message: 'Content must be between 10 and 10000 characters' });
+      }
+
+      const validCategories = [
+        'air_quality',
+        'water_quality',
+        'sustainability',
+        'policy',
+        'green_spaces',
+        'waste_management',
+        'climate_change',
+        'community_events'
+      ];
+
+      if (!category || !validCategories.includes(category)) {
+        errors.push({ field: 'category', message: 'Invalid category' });
+      }
+
+      if (tags && tags.length > 5) {
+        errors.push({ field: 'tags', message: 'Maximum 5 tags allowed' });
+      }
+
+      if (errors.length > 0) {
+        throw new ValidationError(errors);
+      }
+
+      const topic = await Forum.createTopic({ title, content, category, tags }, userId);
+      return topic;
     } catch (error) {
-      throw new ForumError('Error creating topic: ' + error.message);
+      console.error('Error creating topic:', error);
+      throw error;
     }
   }
 
-  // Update existing forum topic
-  static async updateTopic(id, userId, updates) {
+  // Update topic
+  static async updateTopic(id, updates, userId) {
     try {
       const topic = await Forum.updateTopic(id, updates, userId);
+
       if (!topic) {
-        throw new ForumError('Topic not found or access denied');
+        throw new Error('Topic not found or unauthorized');
       }
+
       return topic;
     } catch (error) {
-      throw new ForumError('Error updating topic: ' + error.message);
+      console.error('Error updating topic:', error);
+      throw error;
     }
   }
 
-  // Delete forum topic
+  // Delete topic
   static async deleteTopic(id, userId) {
     try {
       const topic = await Forum.deleteTopic(id, userId);
+
       if (!topic) {
-        throw new ForumError('Topic not found or access denied');
+        throw new Error('Topic not found or unauthorized');
       }
+
       return topic;
     } catch (error) {
-      throw new ForumError('Error deleting topic: ' + error.message);
+      console.error('Error deleting topic:', error);
+      throw error;
     }
   }
 
   // Add reply to topic
-  static async addReply(topicId, userId, content) {
+  static async addReply(topicId, content, userId) {
     try {
-      return await Forum.addReply(topicId, content, userId);
+      // Validation
+      if (!content || content.length < 10 || content.length > 5000) {
+        throw new Error('Reply content must be between 10 and 5000 characters');
+      }
+
+      const reply = await Forum.addReply(topicId, content, userId);
+      return reply;
     } catch (error) {
-      throw new ForumError('Error adding reply: ' + error.message);
+      console.error('Error adding reply:', error);
+      throw error;
     }
   }
 
-  // Get all replies for a topic
+  // Get replies for a topic
   static async getTopicReplies(topicId, limit, offset) {
     try {
-      return await Forum.getTopicReplies(topicId, limit, offset);
+      const result = await Forum.getTopicReplies(topicId, limit, offset);
+      return result;
     } catch (error) {
-      throw new ForumError('Error fetching replies: ' + error.message);
+      console.error('Error getting topic replies:', error);
+      throw error;
     }
   }
 
-  // Vote on a topic
+  // Vote on topic
   static async voteTopic(topicId, userId, voteType) {
     try {
-      return await Forum.voteTopic(topicId, userId, voteType);
+      if (!['up', 'down'].includes(voteType)) {
+        throw new Error('Invalid vote type. Must be "up" or "down"');
+      }
+
+      const votes = await Forum.voteTopic(topicId, userId, voteType);
+      return votes;
     } catch (error) {
-      throw new ForumError('Error voting on topic: ' + error.message);
+      console.error('Error voting on topic:', error);
+      throw error;
     }
   }
 
   // Get forum statistics
   static async getForumStats() {
     try {
-      return await Forum.getForumStats();
+      const stats = await Forum.getForumStats();
+      return stats;
     } catch (error) {
-      throw new ForumError('Error fetching forum stats: ' + error.message);
+      console.error('Error getting forum stats:', error);
+      throw error;
     }
   }
 
   // Get top contributors
-  static async getTopContributors(limit) {
+  static async getTopContributors(limit = 10) {
     try {
-      return await Forum.getTopContributors(limit);
+      const contributors = await Forum.getTopContributors(limit);
+      return contributors;
     } catch (error) {
-      throw new ForumError('Error fetching top contributors: ' + error.message);
+      console.error('Error getting top contributors:', error);
+      throw error;
     }
   }
 
@@ -115,7 +178,8 @@ class ForumService {
     try {
       await Forum.updateUserOnlineStatus(userId, username);
     } catch (error) {
-      throw new ForumError('Error updating online status: ' + error.message);
+      console.error('Error updating user online status:', error);
+      throw error;
     }
   }
 }

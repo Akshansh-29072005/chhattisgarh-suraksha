@@ -10,6 +10,7 @@ import ForumFilters from './components/ForumFilters';
 import Icon from '../../components/AppIcon';
 import Button from '../../components/ui/Button';
 import { forumAPI } from '../../utils/forum-api';
+import { toast } from 'sonner';
 
 const CommunityForum = () => {
   const navigate = useNavigate();
@@ -153,12 +154,17 @@ const CommunityForum = () => {
 
   const handleCreateTopic = async (topicData) => {
     try {
-      const response = await forumAPI.createTopic({
+      const outgoing = {
         title: topicData.title,
         content: topicData.content,
         category: topicData.category,
         tags: topicData.tags
-      });
+      };
+
+      // Debug: log outgoing payload so we can inspect exact shape in the browser console
+      console.debug('[CreateTopic] Outgoing payload:', outgoing);
+
+      const response = await forumAPI.createTopic(outgoing);
 
       // Close modal and show success
       setIsCreateModalOpen(false);
@@ -168,6 +174,10 @@ const CommunityForum = () => {
 
       // Reload topics and then navigate
       await loadTopics();
+
+      // Show a success toast after topics are refreshed so users see confirmation
+      const createdTitle = response?.data?.data?.title || 'Topic created';
+      toast.success('Topic created', { description: `"${createdTitle}" has been posted.` });
 
       // Navigate to the new topic if we have an ID
       if (newTopicId) {

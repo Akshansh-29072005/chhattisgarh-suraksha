@@ -1,7 +1,8 @@
 class ForumError extends Error {
   constructor(message, code = 'FORUM_ERROR', status = 400) {
     super(message);
-    this.name = 'ForumError';
+    // Ensure subclasses get their constructor name (e.g. 'ValidationError')
+    this.name = this.constructor.name;
     this.code = code;
     this.status = status;
   }

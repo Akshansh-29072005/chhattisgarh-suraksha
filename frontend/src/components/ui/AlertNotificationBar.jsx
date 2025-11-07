@@ -1,15 +1,41 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Icon from '../AppIcon';
 import Button from './Button';
-import { metricsAPI } from '../../utils/api';
+import { metricsAPI, auth } from '../../utils/api';
 import { toast } from 'sonner';
+import { useWebSocket } from '../../hooks/useWebSocket';
 
 const AlertNotificationBar = () => {
   const [alerts, setAlerts] = useState([]);
   const [isVisible, setIsVisible] = useState(false);
   const [currentAlertIndex, setCurrentAlertIndex] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
-  const wsRef = useRef(null);
+
+  // Set up WebSocket connection with authentication token
+  const wsUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/api/ws?token=${auth.getToken()}`;
+  
+  const { isConnected } = useWebSocket(wsUrl, {
+    onMessage: (data) => {
+      if (data.type === 'alert') {
+        setAlerts(prev => {
+          const newAlerts = [...prev];
+          const existingIndex = newAlerts.findIndex(a => a.id === data.alert.id);
+          
+          if (existingIndex >= 0) {
+            newAlerts[existingIndex] = data.alert;
+          } else {
+            newAlerts.unshift(data.alert);
+            toast.message(data.alert.title, {
+              description: data.alert.message
+            });
+          }
+          
+          return newAlerts;
+        });
+        setIsVisible(true);
+      }
+    }
+  });
 
   const fetchAlerts = useCallback(async () => {
     try {
@@ -27,68 +53,24 @@ const AlertNotificationBar = () => {
     }
   }, []);
 
-  const setupWebSocket = useCallback(() => {
-    if (wsRef.current) return; // Already connected
-
-    try {
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const wsUrl = `${protocol}//${window.location.host}/api/ws/alerts`;
-      
-      const ws = new WebSocket(wsUrl);
-      wsRef.current = ws;
-
-      ws.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          if (data.type === 'alert') {
-            setAlerts(prev => {
-              const newAlerts = [...prev];
-              const existingIndex = newAlerts.findIndex(a => a.id === data.alert.id);
-              
-              if (existingIndex >= 0) {
-                newAlerts[existingIndex] = data.alert;
-              } else {
-                newAlerts.unshift(data.alert);
-                toast.message(data.alert.title, {
-                  description: data.alert.message
-                });
-              }
-              
-              return newAlerts;
-            });
-            setIsVisible(true);
-          }
-        } catch (err) {
-          console.error('Failed to parse WebSocket message:', err);
-        }
-      };
-
-      ws.onclose = () => {
-        wsRef.current = null;
-        // Attempt to reconnect after a delay
-        setTimeout(setupWebSocket, 5000);
-      };
-
-    } catch (error) {
-      console.error('WebSocket connection failed:', error);
-      wsRef.current = null;
-    }
-  }, []);
-
   useEffect(() => {
-    fetchAlerts(); // Initial fetch
-    setupWebSocket(); // Set up real-time updates
+    // Initial fetch once
+    fetchAlerts();
 
-    const pollInterval = setInterval(fetchAlerts, 30000); // Fallback polling every 30s
+    // Fallback polling in case WebSocket is not connected.
+    // Use a conservative interval (60s) to avoid aggressive polling when disconnected.
+    let pollInterval = null;
+    if (!isConnected) {
+      pollInterval = setInterval(() => {
+        // Only poll when disconnected to avoid duplication when WS is active
+        if (!isConnected) fetchAlerts();
+      }, 60000); // 60s
+    }
 
     return () => {
-      clearInterval(pollInterval);
-      if (wsRef.current) {
-        wsRef.current.close();
-        wsRef.current = null;
-      }
+      if (pollInterval) clearInterval(pollInterval);
     };
-  }, [fetchAlerts, setupWebSocket]);
+  }, [fetchAlerts, isConnected]);
 
   useEffect(() => {
     if (alerts?.length > 1) {

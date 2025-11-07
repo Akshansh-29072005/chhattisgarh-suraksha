@@ -235,6 +235,28 @@ export const userAPI = {
     }
   },
 
+  // Get user stats (reports, forum counts, impact score, achievements)
+  getStats: async (userId) => {
+    try {
+      const response = await api.get(`/users/${userId}/stats`);
+      return response.data;
+    } catch (error) {
+      console.error('Failed to fetch user stats:', error);
+      throw new Error(error.response?.data?.message || 'Failed to fetch user stats');
+    }
+  },
+
+  // Get recent user activity
+  getActivity: async (userId, limit = 20) => {
+    try {
+      const response = await api.get(`/users/${userId}/activity?limit=${limit}`);
+      return response.data;
+    } catch (error) {
+      console.error('Failed to fetch user activity:', error);
+      throw new Error(error.response?.data?.message || 'Failed to fetch user activity');
+    }
+  },
+
   // Update user profile
   updateProfile: async (userData) => {
     try {

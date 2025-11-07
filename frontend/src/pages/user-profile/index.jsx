@@ -62,6 +62,31 @@ function UserProfile() {
         const profileData = profile?.data || profile || null;
         if (profileData) {
           setUserData(profileData);
+          // Fetch impact/stats and recent activity for the profile we just loaded
+          (async () => {
+            try {
+              const userId = profileData.id || user?.id;
+              if (!userId) return;
+
+              const [statsRes, activityRes] = await Promise.allSettled([
+                userAPI.getStats(userId),
+                userAPI.getActivity(userId, 10)
+              ]);
+
+              if (statsRes.status === 'fulfilled') {
+                const stats = statsRes.value?.data || statsRes.value || null;
+                setImpactData(stats || null);
+              }
+
+              if (activityRes.status === 'fulfilled') {
+                const activitiesPayload = activityRes.value?.data || activityRes.value || null;
+                const activities = activitiesPayload?.activities || activitiesPayload || [];
+                setRecentActivities(activities);
+              }
+            } catch (err) {
+              console.warn('Could not load impact data:', err?.message || err);
+            }
+          })();
         }
       } catch (error) {
         console.error('Failed to fetch user data:', error);
@@ -158,12 +183,9 @@ function UserProfile() {
   });
 
   // Mock impact data
-  const impactData = {
-    reportsSubmitted: 47,
-    communityInteractions: 156,
-    dataPointsContributed: 1203,
-    environmentalScore: 8.7
-  };
+  // Impact data fetched from backend (replaces previous hardcoded mock)
+  const [impactData, setImpactData] = React.useState(null);
+  const [recentActivities, setRecentActivities] = React.useState([]);
 
   const tabs = [
     { id: 'profile', label: 'Profile', icon: 'User', component: ProfileHeader },
@@ -204,7 +226,7 @@ function UserProfile() {
       case 'preferences':
         return <Component preferences={environmentalPreferences} onUpdatePreferences={handleUpdatePreferences} />;
       case 'impact':
-        return <Component impactData={impactData} />;
+        return <Component impactData={impactData} recentActivities={recentActivities} />;
       case 'notifications':
         return <Component settings={notificationSettings} onUpdateSettings={handleUpdateNotifications} />;
       case 'data':
