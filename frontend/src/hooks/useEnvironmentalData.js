@@ -155,22 +155,25 @@ export const useEnvironmentalData = () => {
 
           // Process and validate metrics response
       const rawData = metricsResponse?.data?.data || {};
+      // Preserve nulls when backend doesn't have a value (avoid coercing null -> 0)
+      const toNumberOrNull = (v) => (v === null || v === undefined ? null : Number(v));
+
       const processedMetrics = {
-        aqi: parseFloat(rawData.aqi) || 0,
-        pm25: parseFloat(rawData.pm25) || 0,
-        pm10: parseFloat(rawData.pm10) || 0,
-        temperature: parseFloat(rawData.temperature) || 0,
-        humidity: parseFloat(rawData.humidity) || 0,
-        wind_speed: parseFloat(rawData.wind_speed) || 0,
-        wind_direction: rawData.wind_direction || 'N/A',
-        precipitation: parseFloat(rawData.precipitation) || 0,
+        aqi: toNumberOrNull(rawData.aqi),
+        pm25: toNumberOrNull(rawData.pm25),
+        pm10: toNumberOrNull(rawData.pm10),
+        temperature: toNumberOrNull(rawData.temperature),
+        humidity: toNumberOrNull(rawData.humidity),
+        wind_speed: toNumberOrNull(rawData.wind_speed),
+        wind_direction: rawData.wind_direction || null,
+        precipitation: toNumberOrNull(rawData.precipitation),
         last_updated: rawData.last_updated || new Date().toISOString(),
         // Additional metrics
-        no2: parseFloat(rawData.no2) || 0,
-        so2: parseFloat(rawData.so2) || 0,
-        o3: parseFloat(rawData.o3) || 0,
-        co: parseFloat(rawData.co) || 0,
-        pressure: parseFloat(rawData.pressure) || 0
+        no2: toNumberOrNull(rawData.no2),
+        so2: toNumberOrNull(rawData.so2),
+        o3: toNumberOrNull(rawData.o3),
+        co: toNumberOrNull(rawData.co),
+        pressure: toNumberOrNull(rawData.pressure)
       };
       
       // Only update metrics if we have at least some valid data

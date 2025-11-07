@@ -113,8 +113,10 @@ const AlertNotificationBar = () => {
   };
 
   const formatTimeAgo = (timestamp) => {
+    if (!timestamp) return '';
     const now = new Date();
-    const diff = now - timestamp;
+    const ts = new Date(timestamp);
+    const diff = now - ts;
     const minutes = Math.floor(diff / 60000);
     
     if (minutes < 1) return 'Just now';

@@ -1,5 +1,6 @@
 import axios from 'axios';
 import EnvironmentalMetrics from '../models/environmental-metrics.js';
+import { broadcast } from './ws-broadcaster.js';
 
 const WAQI_API_KEY = process.env.WAQI_API_KEY;
 
@@ -15,7 +16,7 @@ class EnvironmentalDataService {
   // Fetch air quality data from WAQI API
   static async fetchAirQualityData() {
     try {
-      if (!WAQI_API_KEY || WAQI_API_KEY === 'your_waqi_api_key_here') {
+      if (!WAQI_API_KEY || WAQI_API_KEY === '4d088aed7349967ad5cf5a2d8f54662a48957105') {
         console.warn('⚠️ No valid WAQI API key found. Using Open-Meteo air quality data instead.');
         
         // Try to get air quality data from Open-Meteo
@@ -182,12 +183,36 @@ class EnvironmentalDataService {
       });
     }
 
-    // Save alerts
+    // Save alerts and broadcast to connected clients
+    let created = [];
     if (alertData.length > 0) {
-      await EnvironmentalMetrics.createAlerts(alertData);
+      created = await EnvironmentalMetrics.createAlerts(alertData);
+
+      // Normalize and broadcast each created alert
+      try {
+        for (const a of created) {
+          const payload = {
+            type: 'alert',
+            alert: {
+              id: a.id || `alert-${Date.now()}`,
+              type: a.type,
+              severity: a.severity,
+              title: `${a.type?.replace('_', ' ').toUpperCase()} - ${a.severity?.toUpperCase()}`,
+              message: a.message,
+              details: a.details,
+              timestamp: a.timestamp || new Date().toISOString(),
+              location_id: a.location_id || 1
+            }
+          };
+          // Broadcast to all connected clients
+          broadcast(payload);
+        }
+      } catch (bErr) {
+        console.warn('Failed to broadcast alerts via WebSocket:', bErr?.message || bErr);
+      }
     }
 
-    return alerts;
+    return created;
   }
 
   // Update real-time metrics

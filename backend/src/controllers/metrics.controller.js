@@ -34,8 +34,57 @@ export const getCurrentMetrics = async (req, res, next) => {
     if (!metrics || new Date(metrics.last_updated) < thirtyMinutesAgo) {
       console.log('⚠️  Metrics are outdated or missing, fetching new data...');
       console.log('📍 Location: Raipur (21.2514, 81.6296)');
-      metrics = await EnvironmentalDataService.updateRealTimeMetrics();
-      console.log('✅ New metrics fetched successfully');
+      try {
+        metrics = await EnvironmentalDataService.updateRealTimeMetrics();
+        console.log('✅ New metrics fetched successfully');
+      } catch (fetchErr) {
+        console.error('⚠️ Failed to update real-time metrics from external APIs:', fetchErr?.message || fetchErr);
+        // Attempt to return the last-known metrics from DB instead of failing hard
+        try {
+          // Try to return the last-known joined metrics first
+          let fallback = await EnvironmentalMetrics.getLatestMetrics();
+          if (fallback) {
+            console.log('ℹ️ Returning last-known metrics from DB as fallback');
+            metrics = fallback;
+          } else {
+            // If no real_time_metrics row exists, try best-effort: return latest air and latest weather separately
+            console.log('ℹ️ No real_time_metrics row found; attempting best-effort merge of latest air and weather rows');
+            const latestAir = await query(`SELECT * FROM air_quality_metrics WHERE location_id = $1 ORDER BY timestamp DESC LIMIT 1`, [1]);
+            const latestWeather = await query(`SELECT * FROM weather_metrics WHERE location_id = $1 ORDER BY timestamp DESC LIMIT 1`, [1]);
+
+            const airRow = latestAir.rows[0] || null;
+            const weatherRow = latestWeather.rows[0] || null;
+
+            if (airRow || weatherRow) {
+              // Build a combined metrics object similar to what getLatestMetrics would return
+              metrics = {
+                last_updated: (airRow?.timestamp || weatherRow?.timestamp) || new Date().toISOString(),
+                aqi: airRow?.aqi ?? null,
+                pm25: airRow?.pm25 ?? null,
+                pm10: airRow?.pm10 ?? null,
+                no2: airRow?.no2 ?? null,
+                so2: airRow?.so2 ?? null,
+                o3: airRow?.o3 ?? null,
+                co: airRow?.co ?? null,
+                temperature: weatherRow?.temperature ?? null,
+                humidity: weatherRow?.humidity ?? null,
+                wind_speed: weatherRow?.wind_speed ?? null,
+                wind_direction: weatherRow?.wind_direction ?? null,
+                precipitation: weatherRow?.precipitation ?? null,
+                pressure: weatherRow?.pressure ?? null,
+                alerts: []
+              };
+              console.log('ℹ️ Returning combined latest air/weather metrics as fallback');
+            } else {
+              // Re-throw original error so middleware handles it (no metrics available)
+              throw fetchErr;
+            }
+          }
+        } catch (fallbackErr) {
+          console.error('❌ Fallback to DB metrics also failed:', fallbackErr?.message || fallbackErr);
+          throw fetchErr; // preserve original intent
+        }
+      }
     } else {
       console.log('✅ Using cached metrics from database');
     }
@@ -73,7 +122,28 @@ export const getActiveAlerts = async (req, res, next) => {
       });
     }
 
-    const alerts = await EnvironmentalMetrics.getActiveAlerts();
+    const rawAlerts = await EnvironmentalMetrics.getActiveAlerts();
+
+    // Normalize alerts to a frontend-friendly shape
+    const alerts = rawAlerts.map(a => {
+      let details = a.details;
+      try {
+        if (typeof details === 'string') details = JSON.parse(details);
+      } catch (e) {
+        // leave as-is if parsing fails
+      }
+
+      return {
+        id: a.id,
+        type: a.type || 'general',
+        severity: a.severity || 'low',
+        title: a.message ? `${(a.type || 'Alert').toUpperCase()}` : 'Alert',
+        message: a.message || (details?.message || 'Important update'),
+        details,
+        timestamp: a.timestamp || a.created_at || new Date().toISOString(),
+        location: a.location_id ? 'Raipur' : 'Unknown'
+      };
+    });
 
     res.status(200).json({
       success: true,

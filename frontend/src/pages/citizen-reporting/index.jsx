@@ -488,25 +488,7 @@ const CitizenReporting = () => {
                 </ul>
               </div>
 
-              {/* Emergency Contact */}
-              <div className="bg-error/5 border border-error/20 rounded-lg p-6">
-                <div className="flex items-center space-x-2 mb-3">
-                  <Icon name="AlertTriangle" size={18} className="text-error" />
-                  <h3 className="font-semibold text-error">Emergency Situations</h3>
-                </div>
-                <p className="text-sm text-muted-foreground mb-3">
-                  For immediate health or safety threats, contact emergency services first.
-                </p>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="w-full border-error text-error hover:bg-error hover:text-error-foreground"
-                  iconName="Phone"
-                  iconPosition="left"
-                >
-                  Call 911
-                </Button>
-              </div>
+              {/* Emergency Contact removed per request */}
 
               {/* Nearby Reports */}
               <div className="bg-card border border-border rounded-lg p-6">

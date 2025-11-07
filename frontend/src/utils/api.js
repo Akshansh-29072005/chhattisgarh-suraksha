@@ -265,6 +265,17 @@ export const userAPI = {
     } catch (error) {
       throw new Error(error.response?.data?.message || 'Failed to update profile');
     }
+  },
+
+  // Get community-level aggregated stats
+  getCommunityStats: async () => {
+    try {
+      const response = await api.get('/community/stats');
+      return response.data;
+    } catch (error) {
+      console.error('Failed to fetch community stats:', error);
+      throw new Error(error.response?.data?.message || 'Failed to fetch community stats');
+    }
   }
 };
 

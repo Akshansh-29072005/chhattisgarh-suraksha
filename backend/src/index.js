@@ -254,9 +254,6 @@ dbConnect().then(async () => {
   // Create WebSocket server attached to the HTTP server
   const wss = new WebSocketServer({ server, path: '/api/ws' });
 
-  // Store connected clients
-  const clients = new Map();
-
   // WebSocket connection handler
   wss.on('connection', async (ws, req) => {
     console.log('👥 New WebSocket connection');
@@ -272,7 +269,15 @@ dbConnect().then(async () => {
         const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
         userId = decoded.id;
         console.log('🔑 Authenticated WebSocket connection for user:', userId);
-        clients.set(userId, ws);
+        // register with central broadcaster
+        try {
+          // lazy import to avoid circular issues when this file is required elsewhere
+          const { registerClient } = await import('./services/ws-broadcaster.js');
+          registerClient(userId, ws);
+        } catch (impErr) {
+          console.warn('Could not register ws client with broadcaster:', impErr?.message || impErr);
+          // Still allow the connection to proceed but it won't receive broadcasts
+        }
       }
     } catch (err) {
       console.warn('⚠️ Invalid token in WebSocket connection:', err.message);
@@ -291,10 +296,15 @@ dbConnect().then(async () => {
     });
 
     // Handle client disconnection
-    ws.on('close', () => {
+    ws.on('close', async () => {
       console.log('🚪 Client disconnected');
       if (userId) {
-        clients.delete(userId);
+        try {
+          const { removeClient } = await import('./services/ws-broadcaster.js');
+          removeClient(userId);
+        } catch (e) {
+          console.warn('Failed to remove WS client from broadcaster:', e?.message || e);
+        }
       }
     });
 
