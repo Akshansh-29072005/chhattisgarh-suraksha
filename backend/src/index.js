@@ -60,6 +60,7 @@ import userActivityRoutes from './routes/user-activity.routes.js';
 import mapRoutes from './routes/map.routes.js';
 import communityRoutes from './routes/community.routes.js';
 import { gamificationRoutes } from './routes/gamification.routes.js';
+import mediaRoutes from './routes/media.routes.js';
 
 // Load environment variables
 dotenv.config();
@@ -157,6 +158,7 @@ app.use(cors(corsOptions));
 
 // Body parsing middleware with error handling
 app.use(express.json({
+  limit: process.env.JSON_BODY_LIMIT || '10mb',
   verify: (req, _res, buf) => {
     try {
       JSON.parse(buf);
@@ -169,7 +171,7 @@ app.use(express.json({
     }
   }
 }));
-app.use(express.urlencoded({ extended: true }));
+app.use(express.urlencoded({ extended: true, limit: process.env.JSON_BODY_LIMIT || '10mb' }));
 
 // Routes
 app.get('/', (req, res) => {
@@ -203,6 +205,7 @@ app.use('/api/forum', forumRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/map', mapRoutes); // Interactive map routes
 app.use('/api/gamification', gamificationRoutes); // Gamification and achievements routes
+app.use('/api/media', mediaRoutes);
 
 // Catch-all route for debugging
 app.use((req, res) => {

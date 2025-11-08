@@ -101,6 +101,8 @@ const CitizenReporting = () => {
       let mediaIds = [];
       
       if (reportData.photos.length > 0) {
+        // Show immediate feedback that photos are being verified/uploaded
+        toast.info('Verifying and uploading photos. This may take a few seconds...');
         // First try storing all photos
         try {
           mediaIds = await storeMedia(reportData.photos, reportIdClient);
@@ -137,6 +139,16 @@ const CitizenReporting = () => {
               mediaIds = [];
               toast.warning('Could not save photo due to storage limitations. Continuing without photo.');
             }
+          }
+        }
+
+        // After attempting to store media, give user feedback about uploaded vs local-fallback images
+        if (mediaIds && mediaIds.length > 0) {
+          const localFallbacks = mediaIds.filter(id => String(id).startsWith('local_'));
+          if (localFallbacks.length === 0) {
+            toast.success('Photos uploaded and verified successfully.');
+          } else {
+            toast.warning(`${localFallbacks.length} photo(s) could not be uploaded and were saved locally. They will be uploaded automatically when connectivity improves.`);
           }
         }
       }

@@ -101,6 +101,31 @@ export const dbConnect = async () => {
         timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
 
+      CREATE TABLE IF NOT EXISTS media_features (
+        id BIGSERIAL PRIMARY KEY,
+        asset_id TEXT UNIQUE,
+        user_id INTEGER REFERENCES users(id),
+        report_id BIGINT REFERENCES reports(id),
+        filename TEXT,
+        url TEXT,
+        sha256 TEXT,
+        phash TEXT,
+        width INTEGER,
+        height INTEGER,
+        size INTEGER,
+        exif JSONB,
+        blur_score NUMERIC,
+        entropy NUMERIC,
+        duplicate_of_asset_id TEXT,
+        spam_score NUMERIC DEFAULT 0,
+        status VARCHAR(20) DEFAULT 'ok',
+        analysis JSONB,
+        environment_score NUMERIC,
+        ai_suspect BOOLEAN,
+        last_checked_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+
       -- Drop existing table if exists
       DROP TABLE IF EXISTS real_time_metrics CASCADE;
       
@@ -140,6 +165,14 @@ export const dbConnect = async () => {
 
     // Initialize gamification tables
     await Gamification.createTables();
+
+    await pool.query(`
+      ALTER TABLE media_features
+      ADD COLUMN IF NOT EXISTS analysis JSONB,
+      ADD COLUMN IF NOT EXISTS environment_score NUMERIC,
+      ADD COLUMN IF NOT EXISTS ai_suspect BOOLEAN,
+      ADD COLUMN IF NOT EXISTS last_checked_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    `);
   } catch (err) {
     console.error('Database connection error:', err);
     throw err;

@@ -34,25 +34,28 @@ const fileToBase64 = async (input) => {
   });
 };
 
-  // Store media files in localStorage with cleanup
-export const storeMedia = async (files, reportId) => {
+import api from './api';
+import { toast } from 'sonner';
+
+// Store media files in localStorage with cleanup. Try to upload each file to
+// the server for analysis; fall back to local storage if upload fails.
+export const storeMedia = async (files, reportId, options = { upload: true }) => {
   try {
     // Get existing media storage
     let existingStorage = JSON.parse(localStorage.getItem(STORAGE_KEYS.MEDIA) || '{}');
-    
+
     // Cleanup old media entries if storage is getting full
     const storageKeys = Object.keys(existingStorage);
-    if (storageKeys.length > 10) {  // Keep only last 10 reports' media
+    if (storageKeys.length > 10) { // Keep only last 10 reports' media
       const sortedKeys = storageKeys.sort((a, b) => {
         const aTime = Math.max(...(existingStorage[a]?.map(m => m.timestamp) || [0]));
         const bTime = Math.max(...(existingStorage[b]?.map(m => m.timestamp) || [0]));
         return bTime - aTime;
       });
-      
+
       // Remove older entries
       const keysToRemove = sortedKeys.slice(10);
       keysToRemove.forEach(key => delete existingStorage[key]);
-      
       try {
         localStorage.setItem(STORAGE_KEYS.MEDIA, JSON.stringify(existingStorage));
       } catch (e) {
@@ -60,7 +63,9 @@ export const storeMedia = async (files, reportId) => {
         existingStorage = {};
         localStorage.setItem(STORAGE_KEYS.MEDIA, '{}');
       }
-    }    // Convert all files to base64
+    }
+
+    // Convert all files to base64 and optionally upload
     const mediaPromises = files.map(async (fileWrapper) => {
       try {
         // Support both raw File/Blob objects and wrapper objects { file, url, data, ... }
@@ -68,13 +73,34 @@ export const storeMedia = async (files, reportId) => {
 
         // If wrapper contains a data property, use it directly
         if (!fileCandidate && fileWrapper && fileWrapper.data) {
+          // If upload is enabled, try to upload the provided data string
+          if (options.upload) {
+            try {
+              const resp = await api.post('/media/upload', { data: fileWrapper.data, name: fileWrapper.name });
+              if (resp?.data?.success && resp.data?.data?.asset_id) {
+                return {
+                  id: resp.data.data.asset_id,
+                  type: fileWrapper.type || 'application/octet-stream',
+                  name: fileWrapper.name || `file_${Date.now()}`,
+                  size: fileWrapper.size || 0,
+                  data: null,
+                  timestamp: Date.now(),
+                  uploaded: true
+                };
+              }
+            } catch (uploadErr) {
+              console.warn('storeMedia: upload failed for provided data, falling back to local', uploadErr?.message || uploadErr);
+            }
+          }
+
           return {
-            id: `${reportId}_${Date.now()}_${fileWrapper.name || 'file'}`,
+            id: `local_${reportId}_${Date.now()}_${fileWrapper.name || 'file'}`,
             type: fileWrapper.type || 'application/octet-stream',
             name: fileWrapper.name || `file_${Date.now()}`,
             size: fileWrapper.size || 0,
             data: fileWrapper.data,
-            timestamp: Date.now()
+            timestamp: Date.now(),
+            uploaded: false
           };
         }
 
@@ -90,13 +116,37 @@ export const storeMedia = async (files, reportId) => {
         const type = fileCandidate?.type || fileWrapper?.type || 'application/octet-stream';
         const size = fileCandidate?.size || fileWrapper?.size || 0;
 
+        // Try uploading to server first when enabled
+        if (options.upload) {
+          try {
+            const resp = await api.post('/media/upload', { data: base64, name });
+            if (resp?.data?.success && resp.data?.data?.asset_id) {
+              return {
+                id: resp.data.data.asset_id,
+                type,
+                name,
+                size,
+                url: resp.data.data.url || null,
+                data: null,
+                timestamp: Date.now(),
+                uploaded: true
+              };
+            }
+          } catch (uploadErr) {
+            console.warn('mediaStorage: upload failed, falling back to local storage', uploadErr?.message || uploadErr);
+            // fallthrough to save locally
+          }
+        }
+
+        // Fallback local storage entry
         return {
-          id: `${reportId}_${Date.now()}_${name}`,
+          id: `local_${reportId}_${Date.now()}_${name}`,
           type,
           name,
           size,
           data: base64,
-          timestamp: Date.now()
+          timestamp: Date.now(),
+          uploaded: false
         };
       } catch (e) {
         console.warn('storeMedia: skipping file because it could not be processed', e?.message || e);
@@ -104,17 +154,21 @@ export const storeMedia = async (files, reportId) => {
       }
     });
 
-  const mediaFilesRaw = await Promise.all(mediaPromises);
-  const mediaFiles = mediaFilesRaw.filter(Boolean);
+    const mediaFilesRaw = await Promise.all(mediaPromises);
+    const mediaFiles = mediaFilesRaw.filter(Boolean);
 
-  // Store under report ID
-  existingStorage[reportId] = mediaFiles;
+    // Store under report ID (we keep local fallbacks so uploads survive)
+    existingStorage[reportId] = mediaFiles;
 
-  // Save back to localStorage
-  localStorage.setItem(STORAGE_KEYS.MEDIA, JSON.stringify(existingStorage));
+    // Save back to localStorage
+    try {
+      localStorage.setItem(STORAGE_KEYS.MEDIA, JSON.stringify(existingStorage));
+    } catch (e) {
+      console.warn('Failed to persist media to localStorage', e?.message || e);
+    }
 
-  // Return media IDs for reference
-  return mediaFiles.map(file => file.id);
+    // Return array of IDs (server asset_id or local_* fallback)
+    return mediaFiles.map(file => file.id);
   } catch (error) {
     console.error('Error storing media:', error);
     throw error;

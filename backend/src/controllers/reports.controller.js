@@ -120,6 +120,82 @@ export async function submitReport(req, res) {
 
     const reportId = insertRes.rows[0].id;
 
+    // If any associated media assets were uploaded, validate their status before continuing.
+    const assetIds = Array.isArray(parsedPhotoHash) ? parsedPhotoHash : (parsedPhotoHash ? [parsedPhotoHash] : []);
+    let unverifiedMedia = false;
+    if (assetIds.length > 0) {
+      try {
+        // Also fetch environment_score and spam_score so we can make an immediate decision
+        const mediaRes = await query(
+          `SELECT asset_id, status, ai_suspect, environment_score, spam_score
+             FROM media_features
+            WHERE asset_id = ANY($1::text[])`,
+          [assetIds]
+        );
+
+        // If some asset IDs referenced by the client don't exist in media_features, treat them as unverified.
+        if (mediaRes.rows.length !== assetIds.length) {
+          console.log('[submitReport] some assetIds were not found in media_features — treating as unverified_media');
+          unverifiedMedia = true;
+          // mark the report for moderation but don't immediately reject it; points will be withheld below
+          await query(`UPDATE reports SET status = 'unverified_media' WHERE id = $1`, [reportId]);
+        }
+
+  // Immediate high-confidence AI detection: if any media row has ai_suspect flag set,
+  // treat as rejected and apply penalty immediately.
+  console.log('[submitReport] media features rows for assets:', mediaRes.rows);
+  const aiDetected = mediaRes.rows.find(row => row.ai_suspect === true);
+        const rejectedMedia = mediaRes.rows.find(row => row.status && row.status.startsWith('rejected'));
+
+        // Also treat very low environment_score as a non-environment image (defensive)
+        const nonEnvDetected = mediaRes.rows.find(row => row.environment_score != null && Number(row.environment_score) < 0.2);
+
+        if (aiDetected || rejectedMedia || nonEnvDetected) {
+          const offender = aiDetected || rejectedMedia || nonEnvDetected;
+          const penaltyPoints = 20;
+          // Determine whether this is an AI-based rejection using ai_suspect or status tokens
+          const isAi = (aiDetected != null) || (offender && (offender.status === 'rejected_ai' || offender.status === 'rejected_ai_generated' || offender.ai_suspect === true));
+          const penaltyType = isAi ? 'report_rejected_media_ai' : 'report_rejected_media_non_env';
+          const rejectionReason = isAi ? 'AI-generated image detected' : 'Uploaded image does not depict an environmental scenario';
+
+          await query(`UPDATE reports SET status = 'rejected_media' WHERE id = $1`, [reportId]);
+
+          await query(
+            `INSERT INTO user_stats (user_id)
+             VALUES ($1)
+             ON CONFLICT (user_id) DO NOTHING`,
+            [userId]
+          );
+
+          await query(
+            `UPDATE user_stats
+                SET updated_at = CURRENT_TIMESTAMP,
+                    last_active = CURRENT_TIMESTAMP,
+                    reports_submitted = GREATEST(COALESCE(reports_submitted, 0) - 1, 0)
+              WHERE user_id = $1`,
+            [userId]
+          );
+
+          await query(
+            `INSERT INTO user_activity_points (user_id, activity_type, points, reference_id)
+             VALUES ($1,$2,$3,$4)`,
+            [userId, penaltyType, -penaltyPoints, reportId]
+          );
+
+          await query('COMMIT');
+
+          return res.status(422).json({
+            success: false,
+            reportId,
+            status: 'rejected_media',
+            error: rejectionReason
+          });
+        }
+      } catch (mediaErr) {
+        console.warn('Media validation failed during submitReport:', mediaErr?.message || mediaErr);
+      }
+    }
+
     // Submit to blockchain (include report id in metadata). Don't fail DB insert if blockchain fails.
     let txHash = null;
     try {
@@ -166,6 +242,12 @@ export async function submitReport(req, res) {
         [userId]
       );
 
+      // If any media was unverified (client-side fallback/local-only) withhold points to avoid rewarding unvetted uploads
+      if (unverifiedMedia) {
+        console.log('[submitReport] withholding points because some media assets are unverified');
+        pointsAwarded = 0;
+      }
+
       // Insert points record
       await query(
         `INSERT INTO user_activity_points (user_id, activity_type, points, reference_id) VALUES ($1, $2, $3, $4)`,
@@ -177,6 +259,32 @@ export async function submitReport(req, res) {
         await UserActivityService.updateAchievements(userId);
       } catch (achErr) {
         console.warn('Failed to update achievements:', achErr?.message || achErr);
+      }
+
+      // Light spam/media checks: if the report included media asset IDs, aggregate their spam_score
+      try {
+        const assetIds = Array.isArray(parsedPhotoHash) ? parsedPhotoHash : (parsedPhotoHash ? [parsedPhotoHash] : []);
+        if (assetIds.length > 0) {
+          const spamRes = await query(`SELECT AVG(spam_score) AS avg_score FROM media_features WHERE asset_id = ANY($1::text[])`, [assetIds]);
+          const avgScore = Number(spamRes.rows?.[0]?.avg_score) || 0;
+          console.log('[submitReport] media avg spam score:', avgScore);
+          const SPAM_THRESHOLD = 80; // configurable
+          if (avgScore >= SPAM_THRESHOLD) {
+            console.log('[submitReport] Flagging report as suspected_spam due to media analysis');
+            await query(`UPDATE reports SET status = 'suspected_spam' WHERE id = $1`, [reportId]);
+            // If points were awarded previously for this report, insert a negative adjustment
+            if (pointsAwarded && pointsAwarded > 0) {
+              await query(
+                `INSERT INTO user_activity_points (user_id, activity_type, points, reference_id) VALUES ($1,$2,$3,$4)`,
+                [userId, 'report_spam_penalty', -pointsAwarded, reportId]
+              );
+              // Zero out pointsAwarded for response
+              pointsAwarded = 0;
+            }
+          }
+        }
+      } catch (spErr) {
+        console.warn('Failed to run media spam checks:', spErr?.message || spErr);
       }
 
     } catch (e) {
