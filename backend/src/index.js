@@ -41,6 +41,37 @@ async function runGamificationMigration() {
     console.log('✅ Gamification tables created');
   }
 }
+// Run employees migration to create municipality employee table if missing
+async function runEmployeesMigration() {
+  try {
+    // quick check if employees table exists
+    await query('SELECT 1 FROM employees LIMIT 1;');
+    console.log('✅ Employees table already exists');
+  } catch (err) {
+    console.log('⚡ Running employees migration...');
+    const migrationPath = path.resolve('./src/migrations/employees_table.sql');
+    const sql = await fs.readFile(migrationPath, 'utf8');
+    try {
+      await query(sql);
+      console.log('✅ Employees table created');
+    } catch (e) {
+      console.error('Employees migration error:', e.message || e);
+      // fallback splitting
+      const parts = sql.split(/;\s*\n/);
+      for (const part of parts) {
+        if (part.trim()) {
+          try {
+            await query(part);
+          } catch (innerErr) {
+            if (!innerErr.message.includes('already exists')) {
+              console.error('Employees migration inner error:', innerErr.message || innerErr);
+            }
+          }
+        }
+      }
+    }
+  }
+}
 import reportsRoutes from './routes/reports.routes.js';
 // Defer importing blockchain service (it may require optional native deps like ethers)
 let blockchain;
@@ -248,6 +279,7 @@ dbConnect().then(async () => {
     await ForumService.initialize();
     await UserActivityService.createTables();
     await runGamificationMigration();
+    await runEmployeesMigration();
   } catch (err) {
     console.error('⚠️ Table initialization warning:', err.message);
   }
