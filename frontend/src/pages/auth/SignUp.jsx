@@ -19,7 +19,9 @@ const SignUp = () => {
     otp: '',
     fullName: '',
     email: '',
-    address: ''
+    address: '',
+    role: 'citizen', // 'citizen' or 'municipality'
+    employeeId: ''
   });
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
@@ -284,6 +286,35 @@ const SignUp = () => {
         {/* User Details Step */}
         {step === 3 && (
           <form onSubmit={handleDetailsSubmit} className="space-y-6">
+            {/* Role selector: Citizen or Municipality Employee */}
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-2">Account Type</label>
+              <div className="flex items-center space-x-4">
+                <label className={`inline-flex items-center space-x-2 cursor-pointer` }>
+                  <input
+                    type="radio"
+                    name="role"
+                    value="citizen"
+                    checked={formData.role === 'citizen'}
+                    onChange={handleChange}
+                    className="form-radio"
+                  />
+                  <span>Citizen</span>
+                </label>
+
+                <label className={`inline-flex items-center space-x-2 cursor-pointer` }>
+                  <input
+                    type="radio"
+                    name="role"
+                    value="municipality"
+                    checked={formData.role === 'municipality'}
+                    onChange={handleChange}
+                    className="form-radio"
+                  />
+                  <span>Municipality Employee</span>
+                </label>
+              </div>
+            </div>
             <div>
               <label htmlFor="fullName" className="block text-sm font-medium text-foreground mb-2">
                 Full Name
@@ -332,10 +363,30 @@ const SignUp = () => {
               />
             </div>
 
+            {/* Employee ID shown only for municipality employees */}
+            {formData.role === 'municipality' && (
+              <div>
+                <label htmlFor="employeeId" className="block text-sm font-medium text-foreground mb-2">
+                  Employee ID
+                </label>
+                <Input
+                  id="employeeId"
+                  name="employeeId"
+                  type="text"
+                  placeholder="Enter your municipal employee ID"
+                  value={formData.employeeId}
+                  onChange={handleChange}
+                  required={formData.role === 'municipality'}
+                  className="w-full"
+                />
+                <p className="mt-2 text-sm text-muted-foreground">Only required for Municipality Employees.</p>
+              </div>
+            )}
+
             <Button
               type="submit"
               className="w-full"
-              disabled={!formData.fullName || !formData.email || !formData.address || isLoading}
+              disabled={!formData.fullName || !formData.email || !formData.address || (formData.role === 'municipality' && !formData.employeeId) || isLoading}
             >
               {isLoading ? (
                 <Icon name="Loader2" className="mr-2 animate-spin" />

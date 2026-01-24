@@ -11,6 +11,7 @@ import ReportMapView from './pages/environmental-dashboard/ReportMapView';
 import CitizenReporting from './pages/citizen-reporting';
 import DataAnalytics from './pages/data-analytics';
 import CommunityForum from './pages/community-forum';
+import MunicipalityProcessing from './pages/municipality-processing';
 import TopicDetails from './pages/community-forum/components/TopicDetails';
 import UserProfile from './pages/user-profile';
 const Login = React.lazy(() => import('./pages/auth/Login'));
@@ -68,6 +69,11 @@ const Routes = () => {
         <Route path="/community-forum" element={
           <ProtectedRoute>
             <CommunityForum />
+          </ProtectedRoute>
+        } />
+        <Route path="/municipality-processing" element={
+          <ProtectedRoute>
+            <MunicipalityProcessing />
           </ProtectedRoute>
         } />
         <Route path="/community-forum/topic/:topicId" element={

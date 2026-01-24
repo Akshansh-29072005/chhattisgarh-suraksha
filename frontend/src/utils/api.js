@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { normalizePhone } from './phone';
 
 // Create axios instance with base URL
 const api = axios.create({
@@ -136,7 +137,8 @@ export const authAPI = {
   // Send OTP
   sendOTP: async (phoneNumber) => {
     try {
-      const response = await api.post('/auth/send-otp', { phoneNumber });
+      const normalized = normalizePhone(phoneNumber);
+      const response = await api.post('/auth/send-otp', { phoneNumber: normalized });
       return response.data;
     } catch (error) {
       throw new Error(error.response?.data?.message || 'Failed to send OTP');
@@ -149,11 +151,12 @@ export const authAPI = {
       // Clear any existing auth state
       tokenManager.clearToken();
       
+      const normalized = normalizePhone(phoneNumber);
       const response = await api.post('/auth/verify-otp', { 
-        phoneNumber, 
-        otp,
-        timestamp: Date.now()
-      });
+          phoneNumber: normalized, 
+          otp,
+          timestamp: Date.now()
+        });
 
       console.log('OTP Verification Response:', response.data);
 
