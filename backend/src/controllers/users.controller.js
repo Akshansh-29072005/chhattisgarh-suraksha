@@ -68,6 +68,19 @@ export const getUserProfile = async (req, res, next) => {
             status: 'online'
         };
 
+        // Determine role: if there's an employees row, mark as municipality
+        try {
+            const empRes = await query('SELECT employee_id FROM employees WHERE user_id = $1 LIMIT 1', [userId]);
+            if (empRes.rows.length > 0) {
+                response.role = 'municipality';
+                response.employeeId = empRes.rows[0].employee_id;
+            } else {
+                response.role = 'citizen';
+            }
+        } catch (err) {
+            // If employees table missing or error, default to citizen
+            response.role = 'citizen';
+        }
         res.status(200).json(response);
     } catch (error) {
         next(error);

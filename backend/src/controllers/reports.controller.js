@@ -473,6 +473,136 @@ export async function getPollutionSources(req, res) {
   }
 }
 
+// Update report status (municipality employees)
+export async function updateReportStatus(req, res) {
+  try {
+    const { id } = req.params;
+    const { status, resolutionMedia } = req.body;
+    const allowed = ['reported', 'investigating', 'action_ongoing', 'resolved', 'rejected_media', 'suspected_spam', 'unverified_media'];
+    if (!allowed.includes(status)) return res.status(400).json({ error: 'Invalid status' });
+
+    // Ensure reports table exists
+    await query(`CREATE TABLE IF NOT EXISTS reports (id BIGSERIAL PRIMARY KEY)`);
+
+    // Ensure caller is municipality employee (best-effort)
+    try {
+      const emp = await query('SELECT 1 FROM employees WHERE user_id = $1 LIMIT 1', [req.user.userId]);
+      if (emp.rows.length === 0) {
+        return res.status(403).json({ error: 'Only municipality employees may update report status' });
+      }
+    } catch (e) {
+      // If employees table missing, deny to be safe
+      return res.status(403).json({ error: 'Only municipality employees may update report status' });
+    }
+
+    // If marking as resolved, require evidence media from the employee
+    if (status === 'resolved') {
+      if (!resolutionMedia || !Array.isArray(resolutionMedia) || resolutionMedia.length === 0) {
+        return res.status(400).json({ error: 'Employee must submit at least one image/video when marking resolved' });
+      }
+    }
+
+    await query('UPDATE reports SET status = $1 WHERE id = $2', [status, id]);
+
+    // If resolved and resolutionMedia provided, store them in a table
+    if (status === 'resolved') {
+      // create resolutions table if missing
+      await query(`
+        CREATE TABLE IF NOT EXISTS report_resolutions (
+          id SERIAL PRIMARY KEY,
+          report_id INTEGER REFERENCES reports(id) ON DELETE CASCADE,
+          submitted_by INTEGER REFERENCES users(id),
+          media JSONB,
+          created_at TIMESTAMP DEFAULT now()
+        )
+      `);
+      await query('INSERT INTO report_resolutions (report_id, submitted_by, media) VALUES ($1, $2, $3)', [id, req.user.userId, JSON.stringify(resolutionMedia)]);
+    }
+
+    return res.json({ success: true, id: Number(id), status });
+  } catch (err) {
+    console.error('Failed to update report status:', err);
+    res.status(500).json({ error: 'Failed to update status' });
+  }
+}
+
+// Assign a report to an employee (store assignment record)
+export async function assignReport(req, res) {
+  try {
+    const { id } = req.params;
+    const { assigneeName, assigneePhone, assigneeEmployeeId } = req.body;
+    if (!assigneeName || !assigneeEmployeeId) return res.status(400).json({ error: 'Assignee name and employeeId are required' });
+
+    // Create assignments table if missing
+    await query(`
+      CREATE TABLE IF NOT EXISTS report_assignments (
+        id SERIAL PRIMARY KEY,
+        report_id BIGINT NOT NULL REFERENCES reports(id) ON DELETE CASCADE,
+        assigned_by INTEGER REFERENCES users(id),
+        assignee_name TEXT NOT NULL,
+        assignee_phone TEXT,
+        assignee_employee_id TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+
+    // Only municipality employees can assign
+    try {
+      const emp = await query('SELECT 1 FROM employees WHERE user_id = $1 LIMIT 1', [req.user.userId]);
+      if (emp.rows.length === 0) return res.status(403).json({ error: 'Only municipality employees may assign tasks' });
+    } catch (e) {
+      return res.status(403).json({ error: 'Only municipality employees may assign tasks' });
+    }
+
+    const insert = await query(
+      `INSERT INTO report_assignments (report_id, assigned_by, assignee_name, assignee_phone, assignee_employee_id) VALUES ($1,$2,$3,$4,$5) RETURNING id`,
+      [id, req.user.userId, assigneeName, assigneePhone || null, assigneeEmployeeId]
+    );
+
+    return res.json({ success: true, assignmentId: insert.rows[0].id });
+  } catch (err) {
+    console.error('Failed to assign report:', err);
+    res.status(500).json({ error: 'Failed to assign report' });
+  }
+}
+
+// Add an internal note for a report
+export async function addReportNote(req, res) {
+  try {
+    const { id } = req.params;
+    const { note } = req.body;
+    if (!note) return res.status(400).json({ error: 'Note is required' });
+
+    await query(`
+      CREATE TABLE IF NOT EXISTS report_notes (
+        id SERIAL PRIMARY KEY,
+        report_id BIGINT NOT NULL REFERENCES reports(id) ON DELETE CASCADE,
+        author_id INTEGER REFERENCES users(id),
+        note TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+
+    // Only municipality employees can add notes
+    try {
+      const emp = await query('SELECT 1 FROM employees WHERE user_id = $1 LIMIT 1', [req.user.userId]);
+      if (emp.rows.length === 0) return res.status(403).json({ error: 'Only municipality employees may add notes' });
+    } catch (e) {
+      return res.status(403).json({ error: 'Only municipality employees may add notes' });
+    }
+
+    const insert = await query(
+      `INSERT INTO report_notes (report_id, author_id, note) VALUES ($1,$2,$3) RETURNING id, created_at`,
+      [id, req.user.userId, note]
+    );
+
+    return res.json({ success: true, noteId: insert.rows[0].id, createdAt: insert.rows[0].created_at });
+  } catch (err) {
+    console.error('Failed to add report note:', err);
+    res.status(500).json({ error: 'Failed to add note' });
+  }
+}
+
 // GET /summary/weekly-reports
 export async function getWeeklyReports(req, res) {
   try {
